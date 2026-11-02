@@ -1,0 +1,204 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Glubi</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+:root{--bg:#0a0e17;--ink:#e6edf7;--mut:#94a3b8;--pan:#111827;--acc:#38bdf8;--ok:#34d399;--no:#f87171;--wait:#fbbf24;--line:#1f2937}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Inter,system-ui,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;padding:14px 20px}
+h1{margin:0;font-size:24px;font-weight:800}h1 span{color:var(--acc)}
+.tfs button,.card,.btn{font:inherit;border:1px solid var(--line);background:var(--pan);color:var(--ink);border-radius:10px;padding:6px 12px;cursor:pointer}
+.tfs button.on,.card.on{border-color:var(--acc);box-shadow:0 0 0 2px #38bdf833}
+.search{position:relative;margin-left:auto}.search input{font:inherit;padding:7px 12px;border:1px solid var(--line);border-radius:10px;width:230px}
+#res{position:absolute;right:0;top:40px;background:var(--pan);border:1px solid var(--line);border-radius:10px;z-index:5;display:none;min-width:200px}
+#res button{display:block;width:100%;text-align:left;border:0;background:none;padding:8px 12px;font:inherit;cursor:pointer}#res button:hover{background:var(--bg)}
+main{padding:0 20px 28px;max-width:1280px;margin:auto}
+#cards{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+.card{display:grid;grid-template-columns:auto 1fr;gap:0 8px;text-align:left;min-width:150px}.card b{font-size:16px}.card span{grid-column:2;color:var(--mut)}.card small{grid-column:2;font-weight:700}
+.dot{width:12px;height:12px;border-radius:50%;margin-top:6px}
+.panel{background:var(--pan);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+#verdict{display:flex;gap:22px;align-items:center;flex-wrap:wrap}
+.dropw{width:88px;height:88px;display:grid;place-items:center}.drop{width:56px;height:56px;border-radius:0 50% 50% 50%;transform:rotate(45deg)}
+#verdict h2{margin:0;font-size:30px;font-weight:800}#verdict p{margin:2px 0;color:var(--mut);max-width:520px}
+.plan{display:flex;gap:22px;flex-wrap:wrap;margin-left:auto}.plan div small{display:block;color:var(--mut)}.plan div b{font-size:18px}
+#chart{height:440px}
+.grid{display:grid;grid-template-columns:1.3fr 1fr;gap:14px}@media(max-width:860px){.grid{grid-template-columns:1fr}.search{margin-left:0}}
+table{width:100%;border-collapse:collapse}td,th{padding:7px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{color:var(--mut);font-weight:700;font-size:13px}.pt{font-weight:800;text-align:right;white-space:nowrap}.up{color:var(--ok)}.dn{color:var(--no)}
+h3{margin:0 0 8px;font-size:16px}ul{margin:0;padding-left:18px}li{margin:2px 0}.mut{color:var(--mut)}
+#msg{color:var(--no);padding:0 20px}.foot{color:var(--mut);font-size:13px;text-align:center;padding:6px 20px 24px}
+#events td{font-size:14px}#events tr[data-ev]:hover{background:var(--bg)}#live{font-weight:700}
+body{background:radial-gradient(900px 420px at 85% -8%,#0e3a5a66,transparent),radial-gradient(700px 380px at -5% 10%,#1e1b4b55,transparent),var(--bg);background-attachment:fixed}
+.panel{border-radius:16px;box-shadow:0 6px 24px #0006;background:linear-gradient(180deg,#131c2e,#0f1626)}
+.btn,.card,.tfs button{background:#0f1626;transition:border-color .15s,transform .15s}.btn:hover,.card:hover,.tfs button:hover{border-color:var(--acc);transform:translateY(-1px)}
+#recalc{background:linear-gradient(135deg,#0ea5e9,#6366f1);border:0;color:#fff;font-weight:700}#recalc:disabled{opacity:.6}
+.chips{display:flex;gap:8px;flex-wrap:wrap}.chip{border:1px solid var(--line);border-radius:12px;padding:8px 12px;min-width:112px;display:grid;background:#0f1626}.chip small{color:var(--mut)}
+#res{background:#0f1626}.search input{background:#0f1626;color:var(--ink)}
+</style></head><body>
+<header><h1>Glubi <span>💧</span></h1><div class="tfs" id="tfs"></div>
+<span id="live" class="mut">conectando...</span><button class="btn" id="recalc">Recalcular</button><button class="btn" id="bell">Activar alertas</button>
+<div class="search"><input id="q" placeholder="Buscar moneda (ej. doge)" autocomplete="off"><div id="res"></div></div></header>
+<div id="msg"></div>
+<main><div id="cards"></div>
+<div class="panel" id="open" style="display:none"></div>
+<div class="panel" id="events"></div>
+<div class="panel" id="verdict"></div>
+<div class="panel" id="probbox"></div>
+<div class="panel" id="posbox"></div>
+<div class="panel" id="sellbox"></div>
+<div class="panel" id="mtf"></div>
+<div class="panel"><div id="chart"></div></div>
+<div class="grid"><div class="panel"><h3>Cálculos detrás de la decisión</h3><table><thead><tr><th>Cálculo</th><th>Resultado</th><th>Puntos</th></tr></thead><tbody id="calc"></tbody></table></div>
+<div class="panel" id="levels"></div></div><div class="panel" id="mem"></div><div class="panel" id="sugg"></div><div class="panel" id="scan"></div></main>
+<div class="foot">Herramienta de análisis y entretenimiento. No es consejo financiero. Los cálculos clásicos no garantizan resultados.</div>
+<script>
+const TFS=['5m','15m','30m','1h','4h','1d'];let tf='1h',sel=null,chart,cs,e50,e200,tls,lines=[];
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=n=>n==null?'-':(Math.abs(n)>=100?n.toLocaleString('en-US',{maximumFractionDigits:2}):Math.abs(n)>=1?n.toFixed(4):n.toFixed(6));
+const NAME={COMPRAR:'COMPRAR',ESPERAR:'ESPERAR',VENDER:'VENDER',CERRAR:'CERRAR CORTO',MANTENER:'MANTENER'};
+const col=d=>d==='COMPRAR'?'var(--ok)':d==='VENDER'||d==='CERRAR'?'var(--no)':'var(--wait)';
+const sg=n=>(n>0?'+':'')+n;
+const post=(p)=>api(p,{method:'POST',headers:{'X-Glubi':'1'}});
+async function api(p,o){const r=await fetch(p,o);const j=await r.json();if(j.error)throw new Error(j.error);return j}
+const err=e=>{$('msg').textContent=e?e.message||e:''};
+function initChart(){
+ chart=LightweightCharts.createChart($('chart'),{height:440,layout:{background:{color:'#111827'},textColor:'#e6edf7'},grid:{vertLines:{color:'#172033'},horzLines:{color:'#172033'}},rightPriceScale:{borderColor:'#1f2937'},timeScale:{borderColor:'#1f2937',timeVisible:true}});
+ cs=chart.addCandlestickSeries({upColor:'#34d399',downColor:'#f87171',borderVisible:false,wickUpColor:'#34d399',wickDownColor:'#f87171'});
+ e50=chart.addLineSeries({color:'#38bdf8',lineWidth:2,priceLineVisible:false,lastValueVisible:false});
+ e200=chart.addLineSeries({color:'#a78bfa',lineWidth:2,priceLineVisible:false,lastValueVisible:false});
+ tls=chart.addLineSeries({color:'#fbbf24',lineWidth:1,lineStyle:2,priceLineVisible:false,lastValueVisible:false});
+ const fit=()=>chart.applyOptions({width:$('chart').clientWidth});fit();addEventListener('resize',fit);
+}
+function drawTfs(){$('tfs').innerHTML=TFS.map(t=>`<button class="${t===tf?'on':''}" data-t="${t}">${t}</button>`).join(' ')}
+async function loadSummary(){
+ const j=await api('/api/summary?tf='+tf);
+ if(!sel||!j.coins.some(c=>c.symbol===sel))sel=j.coins.length?j.coins[0].symbol:null;
+ $('cards').innerHTML=j.coins.map(c=>`<button class="card${c.symbol===sel?' on':''}" data-s="${esc(c.symbol)}"><i class="dot" style="background:${c.error?'#9aa':col(c.decision)}"></i><b>${esc(c.symbol.replace('USDT',''))}</b><span data-p="${esc(c.symbol)}">${c.error?'sin datos':fmt(c.price)}</span><small>${c.error?'':NAME[c.decision]+' '+sg(c.score)+(c.p!=null?' | P '+(c.p*100).toFixed(0)+'%':'')+(c.held?' (en cartera)':'')}</small></button>`).join('');
+ j.coins.forEach(c=>{if(c.price)price[c.symbol]=c.price});lastCoins=j.coins.map(c=>c.symbol);posList=j.coins.filter(c=>c.pos);live();paint();
+}
+async function loadAnalysis(){
+ if(!sel){$('verdict').innerHTML='<p>Agrega una moneda con el buscador.</p>';return}
+ const a=await api(`/api/analysis?symbol=${encodeURIComponent(sel)}&tf=${tf}`);
+ cs.setData(a.candles);e50.setData(a.ema50);e200.setData(a.ema200);tls.setData(a.tl?[{time:a.tl.t1,value:a.tl.p1},{time:a.tl.t2,value:a.tl.p2}]:[]);
+ lines.forEach(l=>cs.removePriceLine(l));lines=[];
+ const pl=(p,c,t,s)=>lines.push(cs.createPriceLine({price:p,color:c,lineWidth:1,lineStyle:s,axisLabelVisible:true,title:t}));
+ a.res.forEach(r=>pl(r[0],'#f87171','Resistencia ('+r[1]+')',2));
+ a.sup.forEach(r=>pl(r[0],'#34d399','Soporte ('+r[1]+')',2));
+ a.fib.levels.forEach(f=>{if([0.382,0.5,0.618,0.786].includes(f.r))pl(f.price,'#fbbf24','Fib '+f.r,1)});
+ pl(a.pivot.P,'#94a3b8','Pivote',3);
+ if(a.pos){pl(a.pos.entry,'#38bdf8','Tu entrada',0);pl(a.pos.stop,'#f87171','Tu stop',0);pl(a.pos.target,'#34d399','Tu objetivo',0)}
+ if(viewKey!==sel+'|'+tf){chart.timeScale().fitContent();viewKey=sel+'|'+tf}
+ const c=col(a.decision);
+ $('verdict').innerHTML=`<div class="dropw"><div class="drop" style="background:${c}"></div></div>
+ <div><div class="mut">${esc(a.symbol)} en ${esc(a.tf)} a <b id="lp">${fmt(price[a.symbol]||a.price)}</b>${a.ctx?' | temporalidad superior: '+esc(a.ctx):''}</div><h2 style="color:${c}">${NAME[a.decision]}</h2><p>${esc(a.reason)}</p><p style="font-size:13px">Confluencia: ${a.conf.items.map(x=>`<span style="color:${x.d>0?'var(--ok)':x.d<0?'var(--no)':'var(--mut)'}">${x.d>0?'▲':x.d<0?'▼':'●'} ${esc(x.n)}</span>`).join(' &nbsp; ')} &nbsp;|&nbsp; ADX ${a.adx.toFixed(0)}${a.adx<20?' (lateral)':''} &nbsp;|&nbsp; ${esc(a.trend)}</p></div>
+ <div class="plan"><div><small>Entrada</small><b>${fmt(a.entry)}</b></div><div><small>Stop</small><b class="dn">${fmt(a.stop)}</b></div><div><small>Objetivo</small><b class="up">${fmt(a.target)}</b></div><div><small>R/R</small><b>${a.rr.toFixed(2)}</b></div></div>
+ <button class="btn" id="rm">Quitar moneda</button>`;curPos=a.pos;drawPos(a);drawSell(a);drawProb(a);
+ $('calc').innerHTML=a.rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${esc(r.detail)}</td><td class="pt ${r.pts>0?'up':r.pts<0?'dn':''}">${sg(r.pts)}</td></tr>`).join('')+`<tr><td><b>Total</b></td><td class="mut">Comprar: +5, 3 de 5 señales alcistas, ADX 20 o más, R/R 1.5 o más y sin ir contra la temporalidad superior. Vender: -4 o menos con 3 de 5 bajistas.</td><td class="pt">${sg(a.score)}</td></tr>`;
+ const li=(arr,cls)=>arr.length?arr.map(r=>`<li class="${cls}">${fmt(r[0])} <span class="mut">(${r[1]} ${r[1]==1?'toque':'toques'})</span></li>`).join(''):'<li class="mut">sin niveles cercanos</li>';
+ const n=a.next,nt=n?`Posible ${n.type==='H'?'máximo':'mínimo'} en unas ${n.bars} velas (${new Date(n.time*1000).toLocaleString()}), cerca de ${fmt(n.price)}. Basado en un promedio de ${n.avg} velas entre giros; es una estimación.`:'No hay giros suficientes para estimarlo.';
+ $('levels').innerHTML=`<h3>Resistencias</h3><ul>${li(a.res,'dn')}</ul><h3 style="margin-top:12px">Soportes</h3><ul>${li(a.sup,'up')}</ul>
+ <h3 style="margin-top:12px">Próximo punto de inflexión</h3><p style="margin:0">${nt}</p>
+ <h3 style="margin-top:12px">Fibonacci (${a.fib.up?'pierna alcista':'pierna bajista'})</h3><ul>${a.fib.levels.map(f=>`<li>${f.r}: ${fmt(f.price)}</li>`).join('')}${a.fib.ext.map(f=>`<li class="mut">Extensión ${f.r}: ${fmt(f.price)}</li>`).join('')}</ul>
+ <h3 style="margin-top:12px">Pivote clásico (vela anterior)</h3><p style="margin:0">S1 ${fmt(a.pivot.S1)} | P ${fmt(a.pivot.P)} | R1 ${fmt(a.pivot.R1)}</p>${nnText(a.nn)}`;loadMtf();
+}
+async function refresh(){try{localStorage.setItem('gtf',tf);if(sel)localStorage.setItem('gsel',sel)}catch(e){}
+ if(scanTf!==tf){scanTf=tf;loadScan()}
+ try{err('');await loadSummary();await loadAnalysis()}catch(e){err(e)}}
+document.addEventListener('click',async e=>{
+ const t=e.target.closest('[data-t]'),s=e.target.closest('[data-s]'),ad=e.target.closest('[data-add]');
+ const ev=e.target.closest('[data-ev]');
+ if(ev){const p=ev.dataset.ev.split('|');sel=p[0];tf=p[1];drawTfs();refresh()}
+ else if(t){tf=t.dataset.t;drawTfs();refresh()}
+ else if(s){sel=s.dataset.s;refresh()}
+ else if(ad)addCoin(ad.dataset.add);
+ else if(e.target.id==='buy'){try{await post('/api/buy?symbol='+sel+'&tf='+tf);refresh()}catch(x){err(x)}}
+ else if(e.target.id==='short'){try{await post('/api/buy?symbol='+sel+'&tf='+tf+'&side=short');refresh()}catch(x){err(x)}}
+ else if(e.target.id==='sellb'){try{await post('/api/sell?symbol='+sel);refresh()}catch(x){err(x)}}
+ else if(e.target.id==='recalc'){const b=e.target;b.disabled=true;b.textContent='Recalculando...';try{await post('/api/recalc?symbol='+(sel||'')+'&tf='+tf);scanTf='';await refresh();loadEvents();loadMem()}catch(x){err(x)}b.disabled=false;b.textContent='Recalcular'}
+ else if(e.target.id==='learn'){try{await post('/api/learn');loadMem()}catch(x){err(x)}}
+ else if(e.target.id==='bell'){alerts=true;try{Notification.requestPermission()}catch(x){}beep();$('bell').textContent='Alertas activas'}
+ else if(e.target.id==='rm'&&sel){await post('/api/remove?symbol='+sel);sel=null;refresh()}
+ if(!e.target.closest('.search'))$('res').style.display='none';
+});
+async function addCoin(s){
+ try{err('');const j=await post('/api/add?symbol='+encodeURIComponent(s));sel=j.symbol;$('q').value='';$('res').style.display='none';refresh()}catch(e){err(e)}
+}
+let tm;$('q').addEventListener('input',()=>{clearTimeout(tm);tm=setTimeout(async()=>{
+ const v=$('q').value.trim();if(v.length<2){$('res').style.display='none';return}
+ try{const j=await api('/api/search?q='+encodeURIComponent(v));
+ $('res').innerHTML=j.results.length?j.results.map(s=>`<button data-add="${esc(s)}">${esc(s.replace('USDT',''))}<span class="mut"> /USDT</span></button>`).join(''):'<button disabled>Sin resultados</button>';
+ $('res').style.display='block'}catch(e){err(e)}},250)});
+$('q').addEventListener('keydown',e=>{if(e.key==='Enter'&&$('q').value.trim())addCoin($('q').value.trim().toUpperCase())});
+const price={};let lastCoins=[],ws=null,wsKey='',alerts=false,lastEv=Math.floor(Date.now()/1000);
+let curPos=null;
+function drawProb(a){const p=a.prob,b=a.buy,ok=b.ok>=4?'var(--ok)':b.ok===3?'var(--wait)':'var(--mut)';
+ const head=p.p==null?'<b>Aún sin datos propios.</b> Glubi está aprendiendo del historial de esta moneda y período; puede tardar unos minutos.':`<span style="font-size:26px;font-weight:800;color:${p.ev>0?'var(--ok)':'var(--no)'}">${(p.p*100).toFixed(0)}%</span> de probabilidad de que el precio llegue al objetivo antes que al stop`;
+ const det=p.p==null?'':`<div class="mut">Necesaria para no perder con este R/R (${a.rr.toFixed(1)}): ${(p.be*100).toFixed(0)}% | Valor esperado: <b class="${p.ev>0?'up':'dn'}">${sg(+p.ev.toFixed(2))}R</b> por cada 1R arriesgado | Aprendido de ${p.n} casos (acierto medio ${(p.win*100).toFixed(0)}%). ${p.valAcc==null?'Aún faltan casos para validarlo.':`Validación: ${(p.valAcc*100).toFixed(0)}% contra ${(p.valBase*100).toFixed(0)}% de base (${p.valN} casos): ${p.useful?'aporta información':'sin ventaja demostrada'}.`}</div>`;
+ $('probbox').innerHTML=`<h3>Probabilidad y dónde comprar</h3><div class="grid"><div>${head}${det}</div><div><b style="color:${ok};font-size:18px">${esc(b.label)}</b><div class="mut">Zona de compra: ${fmt(b.low)} a ${fmt(b.high)}</div><ul style="list-style:none;padding:0;margin:6px 0 0">${b.checks.map(x=>`<li>${x.ok?'<b class="up">sí</b>':'<span class="mut">no</span>'} ${esc(x.t)}</li>`).join('')}</ul></div></div><p class="mut" style="margin:8px 0 0">Es una estimación basada en casos pasados, no una promesa. Se recalibra sola con cada resultado.</p>`}
+const nnText=n=>n?`<h3 style="margin-top:12px">Red neuronal (próximas ${n.H} velas)</h3><p style="margin:0">Probabilidad de subida: <b>${(n.p*100).toFixed(0)}%</b>. Validación fuera de muestra: ${(n.acc*100).toFixed(0)}% de acierto contra ${(n.base*100).toFixed(0)}% de base (${n.valN} casos). <b style="color:${n.qualified?'var(--ok)':'var(--wait)'}">${n.qualified?'Ventaja demostrada: suma al puntaje.':'Sin ventaja demostrada: no suma al puntaje.'}</b></p>`:'';
+const tcol=l=>l==='ALCISTA'?'var(--ok)':l==='BAJISTA'?'var(--no)':'var(--mut)';
+async function loadMtf(){try{
+ if(!sel)return;const j=await api('/api/mtf?symbol='+encodeURIComponent(sel)),R=j.rows,by=l=>R.filter(r=>r.label===l).map(r=>r.tf);
+ const al=by('ALCISTA'),ba=by('BAJISTA'),ot=R.filter(r=>r.label!=='ALCISTA'&&r.label!=='BAJISTA').map(r=>r.tf);
+ const msg=al.length===R.length?'La tendencia ALCISTA se mantiene en los 6 períodos.':ba.length===R.length?'La tendencia BAJISTA se mantiene en los 6 períodos.':`No hay una tendencia común a los 6 períodos. Alcista en: ${al.join(', ')||'ninguno'}. Bajista en: ${ba.join(', ')||'ninguno'}. Lateral o mixta en: ${ot.join(', ')||'ninguno'}.`;
+ $('mtf').innerHTML=`<h3>Tendencia en todos los períodos (${esc(sel.replace('USDT',''))})</h3><div class="chips">${R.map(r=>`<div class="chip" style="border-color:${r.label==='ALCISTA'||r.label==='BAJISTA'?tcol(r.label):'var(--line)'}"><b>${esc(r.tf)}</b><span style="color:${tcol(r.label)};font-weight:700">${esc(r.label)}</span><small>ADX ${r.adx.toFixed(0)} | ${sg(r.score)} | ${esc(r.decision)}</small></div>`).join('')}</div><p class="mut" style="margin:10px 0 0">${msg} Para entrar, usa el período superior como guía y el inferior para el momento exacto.</p>`}catch(e){}}
+function learnBox(L){
+ const lt=Object.entries(L.byTf).map(([t,m])=>`<tr><td>${esc(t)}</td><td>${m.n}</td><td>${(m.win*100).toFixed(0)}%</td><td>${m.valAcc==null?'-':(m.valAcc*100).toFixed(0)+'% / '+(m.valBase*100).toFixed(0)+'%'}</td><td style="color:${m.useful?'var(--ok)':'var(--mut)'}">${m.useful?'aporta':'sin ventaja'}</td></tr>`).join('')||'<tr><td class="mut" colspan="5">Aprendiendo del historial...</td></tr>';
+ const mt=L.methods.map(m=>`<tr><td>${esc(m.name)}</td><td>${m.nPos?(m.wPos/m.nPos*100).toFixed(0)+'% ('+m.nPos+')':'-'}</td><td>${m.nNeg?(m.wNeg/m.nNeg*100).toFixed(0)+'% ('+m.nNeg+')':'-'}</td></tr>`).join('');
+ const T=L.trades;
+ return `<h3 style="margin-top:16px">Retroalimentación: probabilidad aprendida</h3><p class="mut" style="margin:0 0 8px">${L.samples} casos resueltos (historial, señales en vivo y tus operaciones cerradas). Historial analizado: ${L.bt.done} de ${L.bt.total} pares. ${T.n?`Tus operaciones: ${T.n}, ganadas ${T.wins}, promedio ${sg(+T.avg.toFixed(2))}%.`:'Aún no cierras operaciones desde el panel.'} <button class="btn" id="learn">Aprender del historial de nuevo</button></p><div class="grid"><div><table><thead><tr><th>Período</th><th>Casos</th><th>Acierto medio</th><th>Validación / base</th><th>Estado</th></tr></thead><tbody>${lt}</tbody></table></div><div><table><thead><tr><th>Método</th><th>Acierta si favorece</th><th>Acierta si está en contra</th></tr></thead><tbody>${mt}</tbody></table></div></div>`}
+async function loadMem(){try{
+ const j=await api('/api/memory'),st=Object.entries(j.stats).map(([t,s])=>`<li>${esc(t)}: ${s.acierto} aciertos, ${s.fallo} fallos, ${s.expirada} sin resolver</li>`).join('')||'<li class="mut">Aún no hay señales de compra resueltas. Se irán midiendo solas.</li>';
+ const md=j.models.sort((a,b)=>b.acc-a.acc).slice(0,10).map(m=>`<tr><td>${esc(m.key.replace('USDT','').replace('|',' '))}</td><td>${(m.acc*100).toFixed(0)}% / ${(m.base*100).toFixed(0)}%</td><td>${m.valN}</td><td style="color:${m.qualified?'var(--ok)':'var(--mut)'}">${m.qualified?'con ventaja':'sin ventaja'}</td></tr>`).join('');
+ const tr=j.trends.map(x=>`<li>${new Date(x.time*1000).toLocaleString()} ${esc(x.symbol.replace('USDT',''))} ${esc(x.tf)}: ${esc(x.from)} a <b style="color:${tcol(x.to)}">${esc(x.to)}</b> (${fmt(x.price)})</li>`).join('')||'<li class="mut">Todavía no hay cambios de tendencia registrados.</li>';
+ $('mem').innerHTML=`<h3>Memoria y aprendizaje (se guarda en memory.json)</h3><div class="grid"><div><h3 style="font-size:14px" class="mut">Red neuronal por moneda y período: acierto contra base de referencia</h3><table><thead><tr><th>Modelo</th><th>Acierto / base</th><th>Casos</th><th>Estado</th></tr></thead><tbody>${md||'<tr><td class="mut" colspan="4">Entrenando...</td></tr>'}</tbody></table></div><div><h3 style="font-size:14px" class="mut">Cambios de tendencia recordados</h3><ul>${tr}</ul><h3 style="font-size:14px;margin-top:12px" class="mut">Señales de COMPRAR medidas en vivo</h3><ul>${st}</ul></div></div>${learnBox(j.learn)}<p class="mut" style="margin:10px 0 0">La red aprende de velas pasadas y solo cuenta cuando supera la base fuera de muestra. Con mercados ruidosos, lo normal es que no la supere.</p>`}catch(e){}}
+function drawSell(a){const s=a.sell,c=s.ok>=3?'var(--no)':s.ok===2?'var(--wait)':'var(--mut)';
+ $('sellbox').innerHTML=`<h3>Mejor momento de venta</h3><div style="display:flex;gap:22px;flex-wrap:wrap;align-items:center"><div><b style="font-size:20px;color:${c}">${esc(s.label)}</b><div class="mut">Zona de venta: ${fmt(s.low)} a ${fmt(s.high)}</div></div><ul style="list-style:none;padding:0;margin:0">${s.checks.map(x=>`<li>${x.ok?'<b class="up">sí</b>':'<span class="mut">no</span>'} ${esc(x.t)}</li>`).join('')}</ul></div>${s.when?`<p class="mut" style="margin:8px 0 0">${esc(s.when)}</p>`:''}`}
+function drawPos(a){
+ const b=$('posbox'),n=esc(a.symbol.replace('USDT',''));
+ if(!a.pos){b.innerHTML=`<h3>Tu posición en ${n}</h3><p class="mut" style="margin:0 0 10px">Sin posición registrada. Si compras o vendes en corto, regístralo aquí: Glubi te da seguimiento en vivo, calcula tu stop dinámico y te avisa cuándo cerrar. Glubi no ejecuta órdenes.</p><button class="btn" id="buy">Marcar compra (largo) a ${fmt(price[a.symbol]||a.price)}</button> <button class="btn" id="short">Marcar venta en corto</button>`;return}
+ const p=a.pos;
+ b.innerHTML=`<h3>Tu posición ${p.side==='short'?'en corto':'larga'} en ${n}</h3><div class="plan" style="margin:0"><div><small>Entrada</small><b>${fmt(p.entry)}</b></div><div><small>Ganancia o pérdida</small><b id="pnl"></b></div><div><small>Stop dinámico (solo sube)</small><b class="dn">${fmt(p.stop)}</b></div><div><small>Objetivo</small><b class="up">${fmt(p.target)}</b></div><div><small>Estado</small><b id="pst"></b></div></div><p class="mut" style="margin:10px 0">El stop acompaña al precio a 2.5 ATR de distancia y solo se mueve a tu favor.</p><button class="btn" id="sellb">Cerrar posición</button>`;updPos()}
+function posState(p,px){const sh=p.side==='short',w=sh?'CERRAR':'VENDER';
+ const pnl=(sh?p.entry/px-1:px/p.entry-1)*100;let t='MANTENER',c='var(--ok)';
+ if(sh?px>=p.stop:px<=p.stop){t=w+': stop tocado';c='var(--no)'}
+ else if(sh?px<=p.target:px>=p.target){t=w+': objetivo alcanzado';c='var(--no)'}
+ else if(p.alerted){t=w+': '+p.alerted;c='var(--no)'}
+ return{pnl,t,c}}
+function updPos(){drawOpen();const p=curPos,e=$('pnl');if(!p||!e)return;const px=price[sel]||0;if(!px)return;const r=posState(p,px);
+ e.textContent=sg(+r.pnl.toFixed(2))+'%';e.className=r.pnl>=0?'up':'dn';const st=$('pst');st.textContent=r.t;st.style.color=r.c}
+let posList=[],viewKey='',scanTm=null,scanTf='';
+function drawOpen(){const b=$('open');if(!posList.length){b.style.display='none';return}b.style.display='';
+ b.innerHTML='<h3>Mis posiciones abiertas</h3><table><thead><tr><th>Moneda</th><th>Lado</th><th>Entrada</th><th>Precio</th><th>G/P</th><th>Stop</th><th>Objetivo</th><th>Estado</th></tr></thead><tbody>'+posList.map(c=>{const p=c.pos,px=price[c.symbol]||c.price,r=posState(p,px);return `<tr data-s="${esc(c.symbol)}" style="cursor:pointer"><td><b>${esc(c.symbol.replace('USDT',''))}</b> ${esc(p.tf)}</td><td>${p.side==='short'?'Corto':'Largo'}</td><td>${fmt(p.entry)}</td><td>${fmt(px)}</td><td class="${r.pnl>=0?'up':'dn'}"><b>${sg(+r.pnl.toFixed(2))}%</b></td><td class="dn">${fmt(p.stop)}</td><td class="up">${fmt(p.target)}</td><td style="color:${r.c}"><b>${esc(r.t)}</b></td></tr>`}).join('')+'</tbody></table>'}
+async function loadScan(){
+ try{const j=await api('/api/scan?tf='+tf),rows=j.rows||[];
+  const bull=[...rows].sort((a,b)=>b.score-a.score||b.rr-a.rr).slice(0,8),bear=[...rows].sort((a,b)=>a.score-b.score||a.rr-b.rr).slice(0,8);
+  const ok=rows.filter(r=>r.decision==='COMPRAR').sort((a,b)=>b.score-a.score||b.rr-a.rr).slice(0,3),near=rows.filter(r=>r.decision==='ESPERAR'&&r.score>=3).sort((a,b)=>b.score-a.score||b.rr-a.rr).slice(0,3);
+  const cd=(r,t)=>`<div class="panel" style="margin:0;flex:1;min-width:220px"><b>${esc(r.symbol.replace('USDT',''))}</b> <span class="mut">${t}</span><div>Precio ${fmt(r.price)} | puntaje ${sg(r.score)} | R/R ${r.rr.toFixed(1)}</div><div class="mut">Stop <span class="dn">${fmt(r.stop)}</span> | Objetivo <span class="up">${fmt(r.target)}</span></div><button class="btn" style="margin-top:8px" data-add="${esc(r.symbol)}">Agregar y vigilar</button></div>`;
+  $('sugg').innerHTML=`<h3>Sugerencias de monedas (${esc(j.tf||tf)})</h3>`+(j.busy&&!rows.length?'<p class="mut" style="margin:0">Analizando el mercado...</p>':`<div style="display:flex;gap:12px;flex-wrap:wrap">${ok.map(r=>cd(r,'cumple las reglas de compra')).join('')}${near.map(r=>cd(r,'en observación')).join('')}</div>${ok.length||near.length?'':'<p class="mut" style="margin:0">Ninguna moneda cumple las reglas ahora. Esperar también es una decisión.</p>'}<p class="mut" style="margin:10px 0 0">Son candidatas, no recomendaciones. Al agregarla, el semáforo completo la confirma o la descarta (incluye la tendencia diaria).</p>`);
+  const tb=arr=>`<table><thead><tr><th>Moneda</th><th>Precio</th><th>24h</th><th>Tendencia</th><th>Puntaje</th><th>R/R</th><th></th></tr></thead><tbody>${arr.map(r=>`<tr><td><b>${esc(r.symbol.replace('USDT',''))}</b></td><td>${fmt(r.price)}</td><td class="${r.chg>=0?'up':'dn'}">${sg(+r.chg.toFixed(1))}%</td><td>${esc(r.trend)}</td><td class="pt ${r.score>0?'up':r.score<0?'dn':''}">${sg(r.score)}</td><td>${r.rr.toFixed(1)}</td><td><button class="btn" data-add="${esc(r.symbol)}">Agregar</button></td></tr>`).join('')}</tbody></table>`;
+  $('scan').innerHTML=`<h3>Investigación de mercado (${esc(j.tf||tf)})</h3><p class="mut" style="margin:0 0 10px">Glubi analiza las 40 monedas USDT con más volumen de Binance con los mismos cálculos del semáforo y las ordena. ${j.busy?'Analizando '+j.done+' de '+(j.total||40)+'...':'Se actualiza cada 5 minutos.'} No garantiza resultados.</p><div class="grid"><div><h3 class="up">Más alcistas (candidatas a comprar)</h3>${tb(bull)}</div><div><h3 class="dn">Más bajistas (evitar o vigilar para corto)</h3>${tb(bear)}</div></div>`;
+  clearTimeout(scanTm);scanTm=setTimeout(loadScan,j.busy?3000:60000)
+ }catch(e){clearTimeout(scanTm);scanTm=setTimeout(loadScan,15000)}}
+function beep(){try{const c=new AudioContext(),o=c.createOscillator();o.connect(c.destination);o.frequency.value=880;o.start();setTimeout(()=>{o.stop();c.close()},250)}catch(e){}}
+function paint(){document.querySelectorAll('[data-p]').forEach(e=>{const p=price[e.dataset.p];if(p)e.textContent=fmt(p)});const lp=$('lp');if(lp&&price[sel])lp.textContent=fmt(price[sel]);updPos()}
+function live(){
+ const key=tf+'|'+lastCoins.join();if(key===wsKey||!lastCoins.length)return;wsKey=key;
+ if(ws){ws.onclose=null;ws.close()}
+ ws=new WebSocket('wss://data-stream.binance.vision/stream?streams='+lastCoins.map(c=>c.toLowerCase()+'@kline_'+tf).join('/'));
+ ws.onopen=()=>{$('live').textContent='● en vivo';$('live').style.color='var(--ok)'};
+ ws.onmessage=m=>{const d=JSON.parse(m.data).data;if(!d||!d.k)return;const k=d.k,s=d.s;price[s]=+k.c;paint();
+  if(s===sel&&cs){try{cs.update({time:Math.floor(k.t/1000),open:+k.o,high:+k.h,low:+k.l,close:+k.c})}catch(x){}}
+  if(k.x&&s===sel)loadAnalysis().catch(err)};
+ ws.onclose=()=>{$('live').textContent='reconectando...';$('live').style.color='var(--wait)';wsKey='';setTimeout(live,3000)};
+}
+async function loadEvents(){try{
+ const j=await api('/api/events');
+ $('events').innerHTML='<h3>Entradas posibles (en vivo)</h3>'+(j.events.length?`<table><thead><tr><th>Hora</th><th>Moneda</th><th>Cambio</th><th>Precio</th><th>Stop</th><th>Objetivo</th><th>R/R</th></tr></thead><tbody>${j.events.slice(0,12).map(x=>`<tr data-ev="${esc(x.symbol)}|${esc(x.tf)}" style="cursor:pointer"><td>${new Date(x.time*1000).toLocaleTimeString()}</td><td><b>${esc(x.symbol.replace('USDT',''))}</b> ${esc(x.tf)}</td><td style="color:${col(x.to)}"><b>${x.from?NAME[x.from]+' a ':''}${NAME[x.to]}</b>${x.reason?'<br><span class="mut">'+esc(x.reason)+'</span>':''}</td><td>${fmt(x.price)}</td><td class="dn">${fmt(x.stop)}</td><td class="up">${fmt(x.target)}</td><td>${x.rr.toFixed(1)}</td></tr>`).join('')}</tbody></table>`:'<p class="mut" style="margin:0">Glubi vigila 15m, 1h y 4h cada 20 segundos. Cuando una moneda cambie de decisión aparecerá aquí.</p>');
+ const fresh=j.events.filter(x=>(x.to==='COMPRAR'||x.to==='VENDER'||x.to==='CERRAR')&&x.time>lastEv);
+ if(fresh.length){lastEv=Math.max(...fresh.map(x=>x.time));if(alerts){beep();fresh.forEach(x=>{try{new Notification('Glubi: '+x.symbol+' '+x.tf+' -> '+x.to,{body:'Precio '+fmt(x.price)+' | stop '+fmt(x.stop)+' | objetivo '+fmt(x.target)})}catch(e){}})}}
+}catch(e){}}
+try{const t0=localStorage.getItem('gtf');if(TFS.includes(t0))tf=t0;sel=localStorage.getItem('gsel')||null}catch(e){}
+drawTfs();initChart();refresh();setInterval(refresh,10000);loadEvents();setInterval(loadEvents,10000);loadMem();setInterval(loadMem,30000);
+</script></body></html>

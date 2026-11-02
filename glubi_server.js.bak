@@ -1,0 +1,488 @@
+#!/usr/bin/env node
+'use strict';
+/* Glubi Web en Node.js 18+ (sin dependencias). Uso: node glubi_server.js  y abre http://localhost:8765
+   Pon index.html en la misma carpeta. Alertas opcionales a Telegram: TELEGRAM_TOKEN y TELEGRAM_CHAT_ID.
+   Herramienta de análisis, no es consejo financiero. */
+const http = require('http'), fs = require('fs'), path = require('path'), zlib = require('zlib');
+const PORT = +process.env.PORT || 8765, BASE = 'https://data-api.binance.vision/api/v3';
+const WL_FILE = path.join(__dirname, 'watchlist.json'), POS_FILE = path.join(__dirname, 'positions.json');
+const DEFAULT = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'], STEP = { '5m': 300, '15m': 900, '30m': 1800, '1h': 3600, '4h': 14400, '1d': 86400 };
+const SYM = /^[A-Z0-9]{2,20}USDT$/, MON_TFS = Object.keys(STEP), MEM_FILE = path.join(__dirname, 'memory.json');
+const STABLES = new Set(['USDC', 'FDUSD', 'TUSD', 'USDP', 'DAI', 'EUR', 'USD1', 'BUSD', 'AEUR', 'XUSD', 'USDE']);
+const CTX = { 3: 'ALCISTA', 2: 'ALCISTA débil', 1: 'BAJISTA débil', 0: 'BAJISTA' };
+const cache = new Map(), sleep = ms => new Promise(r => setTimeout(r, ms));
+const readJ = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { return d; } };
+const writeJ = (f, v) => fs.writeFileSync(f, JSON.stringify(v));
+const POS = readJ(POS_FILE, {});
+const loadWL = () => { const w = readJ(WL_FILE, null); return Array.isArray(w) ? w.filter(s => SYM.test(s)) : [...DEFAULT]; };
+
+function get(url, ttl = 8) {  // cachea la promesa: las peticiones simultáneas iguales se comparten
+  const now = Date.now() / 1000, c = cache.get(url);
+  if (c && now - c[0] < ttl) return c[1];
+  const p = fetch(url, { headers: { 'User-Agent': 'glubi' }, signal: AbortSignal.timeout(15000) })
+    .then(r => { if (!r.ok) throw new Error('Binance respondió ' + r.status); return r.json(); });
+  cache.set(url, [now, p]); p.catch(() => cache.delete(url));
+  return p;
+}
+const X = { klines: async (sym, tf, n = 500) => (await get(`${BASE}/klines?symbol=${sym}&interval=${tf}&limit=${n}`)).map(k => [Math.floor(+k[0] / 1000), +k[1], +k[2], +k[3], +k[4], +k[5]]) };
+
+// ---------- matemáticas ----------
+const sum = a => a.reduce((x, y) => x + y, 0), max = a => a.reduce((x, y) => y > x ? y : x), min = a => a.reduce((x, y) => y < x ? y : x);
+const sg = n => (n >= 0 ? '+' : '') + n;
+const fm = x => { const a = Math.abs(x); return a >= 100 ? x.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : a >= 1 ? x.toFixed(4) : x.toFixed(6); };
+function ema(v, n) { const k = 2 / (n + 1); let e = v[0]; return v.map(x => (e = x * k + e * (1 - k))); }
+function rsiS(c, n = 14) {
+  const o = new Array(c.length).fill(50); if (c.length <= n) return o;
+  let g = 0, l = 0;
+  for (let i = 1; i <= n; i++) { const d = c[i] - c[i - 1]; g += Math.max(d, 0); l += Math.max(-d, 0); }
+  g /= n; l /= n; o[n] = l === 0 ? 100 : 100 - 100 / (1 + g / l);
+  for (let i = n + 1; i < c.length; i++) { const d = c[i] - c[i - 1]; g = (g * (n - 1) + Math.max(d, 0)) / n; l = (l * (n - 1) + Math.max(-d, 0)) / n; o[i] = l === 0 ? 100 : 100 - 100 / (1 + g / l); }
+  return o;
+}
+function atr(h, l, c, n = 14) {
+  const tr = [h[0] - l[0]];
+  for (let i = 1; i < c.length; i++) tr.push(Math.max(h[i] - l[i], Math.abs(h[i] - c[i - 1]), Math.abs(l[i] - c[i - 1])));
+  let a = sum(tr.slice(0, n)) / n;
+  for (const x of tr.slice(n)) a = (a * (n - 1) + x) / n;
+  return a;
+}
+function adxS(h, l, c, n = 14) {  // ADX de Wilder con +DI y -DI
+  const L = c.length, adx = new Array(L).fill(0), pdi = adx.slice(), mdi = adx.slice();
+  if (L < 2 * n + 2) return { adx, pdi, mdi };
+  const tr = [0], pd = [0], md = [0];
+  for (let i = 1; i < L; i++) { const up = h[i] - h[i - 1], dn = l[i - 1] - l[i]; tr.push(Math.max(h[i] - l[i], Math.abs(h[i] - c[i - 1]), Math.abs(l[i] - c[i - 1]))); pd.push(up > dn && up > 0 ? up : 0); md.push(dn > up && dn > 0 ? dn : 0); }
+  let st = sum(tr.slice(1, n + 1)), sp = sum(pd.slice(1, n + 1)), sm = sum(md.slice(1, n + 1)); const dx = [];
+  for (let i = n; i < L; i++) {
+    if (i > n) { st = st - st / n + tr[i]; sp = sp - sp / n + pd[i]; sm = sm - sm / n + md[i]; }
+    const p = st ? 100 * sp / st : 0, m = st ? 100 * sm / st : 0; pdi[i] = p; mdi[i] = m; dx[i] = p + m === 0 ? 0 : 100 * Math.abs(p - m) / (p + m);
+  }
+  let a = sum(dx.slice(n, 2 * n)) / n; adx[2 * n - 1] = a;
+  for (let i = 2 * n; i < L; i++) { a = (a * (n - 1) + dx[i]) / n; adx[i] = a; }
+  return { adx, pdi, mdi };
+}
+function macdS(c) { const e12 = ema(c, 12), e26 = ema(c, 26), m = e12.map((x, i) => x - e26[i]), s = ema(m, 9); return { m, s, hist: m.map((x, i) => x - s[i]) }; }
+function swings(h, l, off, w = 6) {
+  const o = [];
+  for (let i = w; i < h.length - w; i++) {
+    if (h[i] === max(h.slice(i - w, i + w + 1))) o.push([i + off, h[i], 'H']);
+    if (l[i] === min(l.slice(i - w, i + w + 1))) o.push([i + off, l[i], 'L']);
+  }
+  return o;
+}
+function clusters(sw, a, price) {
+  const g = [];
+  for (const p of sw.map(x => x[1]).sort((x, y) => x - y)) {
+    if (g.length && p - g[g.length - 1][g[g.length - 1].length - 1] <= 0.6 * a) g[g.length - 1].push(p); else g.push([p]);
+  }
+  const lv = g.map(x => [sum(x) / x.length, x.length]), cmp = (x, y) => x[0] - y[0] || x[1] - y[1];
+  return [lv.filter(x => x[0] > price).sort(cmp).slice(0, 3), lv.filter(x => x[0] <= price).sort((x, y) => cmp(y, x)).slice(0, 3)];
+}
+function trendline(sw, kind, a, n, t) {  // línea por los últimos 3 mínimos (alcista) o máximos (bajista); el toque central debe caer sobre la recta
+  const pts = sw.filter(x => x[2] === kind).slice(-3); if (pts.length < 3) return null;
+  const [p1, p2, p3] = pts, sl = (p3[1] - p1[1]) / (p3[0] - p1[0]);
+  if (Math.abs(p1[1] + sl * (p2[0] - p1[0]) - p2[1]) > 0.5 * a || (kind === 'L' && sl <= 0) || (kind === 'H' && sl >= 0)) return null;
+  const now = p1[1] + sl * (n - 1 - p1[0]); return { kind, t1: t[p1[0]], p1: p1[1], t2: t[n - 1], p2: now, now };
+}
+
+// ---------- red neuronal (MLP 10-8-1, JS puro) y memoria en JSON ----------
+const MEM = Object.assign({ models: {}, trends: [], signals: [], stats: {}, last: {}, samples: [], prob: {}, bt: {}, trades: [] }, readJ(MEM_FILE, {}));
+let dirty = false; const markDirty = () => { dirty = true; };
+const saveMem = () => { if (dirty) { dirty = false; try { writeJ(MEM_FILE, MEM); } catch (e) { /* sigue */ } } };
+const FORCE = new Set(), HZ = 6;
+function feats(i, D) {
+  const { c, v, E50, E200, rs, adx, pdi, mdi, hist } = D; let vm = 0; for (let j = i - 20; j < i; j++) vm += v[j]; vm /= 20;
+  return [(c[i] / E50[i] - 1) * 10, (E50[i] / E200[i] - 1) * 10, (rs[i] - 50) / 50, adx[i] / 50, (pdi[i] - mdi[i]) / 50, hist[i] / c[i] * 1000,
+    Math.min(vm ? v[i] / vm : 1, 3) - 1, (c[i] / c[i - 5] - 1) * 10, (c[i] / c[i - 20] - 1) * 5, (c[i] / c[i - 1] - 1) * 50];
+}
+function fwd(M, x) {
+  const z = x.map((u, k) => (u - M.mean[k]) / M.std[k]), hdn = M.W1.map((w, j) => Math.tanh(sum(w.map((q, k) => q * z[k])) + M.b1[j]));
+  return { p: 1 / (1 + Math.exp(-(sum(hdn.map((q, j) => q * M.W2[j])) + M.b2))), z, hdn };
+}
+function train(D, n) {  // entrena con el 70% más antiguo y valida con el 30% más reciente (sin mezclar el futuro)
+  const X = [], Y = [];
+  for (let i = 60; i < n - HZ; i++) { X.push(feats(i, D)); Y.push(D.c[i + HZ] > D.c[i] ? 1 : 0); }
+  const cut = Math.floor(X.length * 0.7); if (cut < 80 || X.length - cut < 40) return null;
+  const dim = X[0].length, mean = [], std = [];
+  for (let k = 0; k < dim; k++) { const col = X.slice(0, cut).map(r => r[k]), m = sum(col) / cut; mean.push(m); std.push(Math.sqrt(sum(col.map(q => (q - m) ** 2)) / cut) || 1); }
+  let seed = 12345; const rnd = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
+  const M = { mean, std, W1: Array.from({ length: 8 }, () => Array.from({ length: dim }, () => (rnd() - 0.5) * 0.6)), b1: Array(8).fill(0), W2: Array.from({ length: 8 }, () => (rnd() - 0.5) * 0.6), b2: 0 };
+  const idx = [...Array(cut).keys()];
+  for (let ep = 0; ep < 120; ep++) {
+    for (let i = idx.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [idx[i], idx[j]] = [idx[j], idx[i]]; }
+    for (const i of idx) {
+      const { p, z, hdn } = fwd(M, X[i]), e = p - Y[i];
+      for (let j = 0; j < 8; j++) { const gh = e * M.W2[j] * (1 - hdn[j] ** 2); M.W2[j] -= 0.03 * (e * hdn[j] + 1e-3 * M.W2[j]); for (let k = 0; k < dim; k++) M.W1[j][k] -= 0.03 * (gh * z[k] + 1e-3 * M.W1[j][k]); M.b1[j] -= 0.03 * gh; }
+      M.b2 -= 0.03 * e;
+    }
+  }
+  let ok = 0, up = 0; for (let i = cut; i < X.length; i++) { if ((fwd(M, X[i]).p >= 0.5 ? 1 : 0) === Y[i]) ok++; up += Y[i]; }
+  const vn = X.length - cut, acc = ok / vn, upr = up / vn, base = Math.max(upr, 1 - upr);
+  return { ...M, acc, base, valN: vn, trainN: cut, H: HZ, time: Date.now(), qualified: vn >= 80 && acc >= 0.55 && acc > base + 0.02 };
+}
+function nnFor(sym, tf, D, n) {
+  const key = sym + '|' + tf; let M = MEM.models[key];
+  if (FORCE.delete(key) || !M || Date.now() - M.time > 2 * 3600e3) { const T = train(D, n); if (T) { M = MEM.models[key] = T; markDirty(); } }
+  if (!M) return null;
+  return { p: fwd(M, feats(n - 1, D)).p, acc: M.acc, base: M.base, valN: M.valN, qualified: M.qualified, H: M.H, time: M.time };
+}
+
+// ---------- análisis por confluencia ----------
+const HTF = { '5m': '4h', '15m': '4h', '30m': '4h', '1h': '4h', '4h': '1d' }, AC = new Map();
+function analyzeC(sym, tf, nK = 500, ctx = true) {  // comparte el cálculo entre panel, vigilante y escáner durante 4 s
+  const key = `${sym}|${tf}|${nK}|${ctx}`, c = AC.get(key), now = Date.now();
+  if (c && now - c[0] < 4000) return c[1];
+  const p = analyze(sym, tf, nK, ctx); AC.set(key, [now, p]); p.catch(() => AC.delete(key)); return p;
+}
+async function analyze(sym, tf, nK = 500, ctx = true) {
+  const k = await X.klines(sym, tf, nK);
+  let htfA = null; if (ctx && HTF[tf]) { try { htfA = await analyzeC(sym, HTF[tf], 300, false); } catch (e) { htfA = null; } }
+  const a = core(k, sym, tf, { htfA, nnFn: ctx && nK >= 500 ? (D, n) => nnFor(sym, tf, D, n) : null });
+  a.prob = probFor(tf, a); return a;
+}
+function core(k, sym, tf, o) {
+  if (k.length < 60) throw new Error('Muy pocas velas para analizar esta moneda');
+  const t = k.map(x => x[0]), h = k.map(x => x[2]), l = k.map(x => x[3]), c = k.map(x => x[4]), v = k.map(x => x[5] || 0);
+  const n = c.length, price = c[n - 1], a = atr(h, l, c), E50 = ema(c, 50), E200 = ema(c, 200), rs = rsiS(c), r = rs[n - 1];
+  const { adx: ADX, pdi, mdi } = adxS(h, l, c), { m: MC, s: MS, hist } = macdS(c), adx = ADX[n - 1], rows = [];
+  const add = (name, detail, pts) => rows.push({ name, detail, pts });
+  const off = Math.max(0, n - 300), sw = swings(h.slice(off), l.slice(off), off), [res, sup] = clusters(sw, a, price);
+  const alt = [];
+  for (const q of [...sw].sort((x, y) => x[0] - y[0] || x[1] - y[1] || (x[2] < y[2] ? -1 : 1))) {
+    const last = alt[alt.length - 1];
+    if (last && last[2] === q[2]) { if ((q[2] === 'H' && q[1] > last[1]) || (q[2] === 'L' && q[1] < last[1])) alt[alt.length - 1] = q; }
+    else alt.push(q);
+  }
+  // 1) medias móviles
+  const s = (price > E50[n - 1]) + (E50[n - 1] > E200[n - 1]) + (price > E200[n - 1]);
+  add('Promedios EMA 50 y 200', `Precio ${price > E50[n - 1] ? '>' : '<'} EMA50 (${fm(E50[n - 1])}); EMA50 ${E50[n - 1] > E200[n - 1] ? '>' : '<'} EMA200 (${fm(E200[n - 1])})`, { 3: 2, 2: 1, 1: -1, 0: -2 }[s]);
+  // 2) cruce dorado / de la muerte
+  let cross = 0, ago = 0;
+  for (let i = n - 1; i >= Math.max(1, n - 30); i--) { const d1 = E50[i] - E200[i], d0 = E50[i - 1] - E200[i - 1]; if (d0 <= 0 && d1 > 0) { cross = 1; ago = n - 1 - i; break; } if (d0 >= 0 && d1 < 0) { cross = -1; ago = n - 1 - i; break; } }
+  add('Cruce de EMA 50/200', cross ? `Cruce ${cross > 0 ? 'dorado (EMA50 sube sobre EMA200)' : 'de la muerte (EMA50 cae bajo EMA200)'} hace ${ago} velas` : 'Sin cruce en las últimas 30 velas', cross);
+  // 3) estructura de máximos y mínimos
+  const hs = alt.filter(x => x[2] === 'H'), ls = alt.filter(x => x[2] === 'L'); let struc = 0, sdet = 'estructura mixta (sin HH/HL ni LH/LL claros)';
+  if (hs.length >= 2 && ls.length >= 2) {
+    const hh = hs.at(-1)[1] > hs.at(-2)[1], hl = ls.at(-1)[1] > ls.at(-2)[1];
+    if (hh && hl) { struc = 2; sdet = 'máximos y mínimos cada vez más altos (HH/HL)'; } else if (!hh && !hl) { struc = -2; sdet = 'máximos y mínimos cada vez más bajos (LH/LL)'; }
+  }
+  add('Estructura del precio', sdet, struc);
+  // 4) línea de tendencia con 3 toques
+  const tlL = trendline(sw, 'L', a, n, t), tlH = trendline(sw, 'H', a, n, t), tl = tlL || tlH; let tp = 0, td = 'Sin línea de tendencia válida con 3 toques';
+  if (tlL) { tp = price > tlL.now ? 1 : -1; td = `Línea alcista de 3 toques en ${fm(tlL.now)}: ${tp > 0 ? 'el precio la respeta' : 'el precio la rompió'}`; }
+  else if (tlH) { tp = price < tlH.now ? -1 : 1; td = `Línea bajista de 3 toques en ${fm(tlH.now)}: ${tp < 0 ? 'sigue vigente' : 'rota al alza'}`; }
+  add('Línea de tendencia', td, tp);
+  // 5) ADX y +DI/-DI
+  add('ADX (fuerza de la tendencia)', `ADX ${adx.toFixed(0)}, +DI ${pdi[n - 1].toFixed(0)} / -DI ${mdi[n - 1].toFixed(0)}: ${adx >= 25 ? 'tendencia sólida' : adx >= 20 ? 'tendencia en formación' : 'mercado lateral, los sistemas de tendencia fallan'}`, adx >= 25 ? (pdi[n - 1] > mdi[n - 1] ? 1 : -1) : 0);
+  // 6) MACD con histograma
+  const mu = MC[n - 1] > MS[n - 1] && hist[n - 1] > hist[n - 2], md = MC[n - 1] < MS[n - 1] && hist[n - 1] < hist[n - 2];
+  add('MACD (impulso)', `MACD ${MC[n - 1] > MS[n - 1] ? 'sobre' : 'bajo'} su señal; histograma ${hist[n - 1] > hist[n - 2] ? 'creciendo' : 'decreciendo'}`, mu ? 1 : md ? -1 : 0);
+  // 7) volumen (última vela cerrada contra el promedio de 20)
+  let vm = 0; for (let j = n - 22; j < n - 2; j++) vm += v[j]; vm /= 20;
+  const vr = vm ? v[n - 2] / vm : 1, upm = c[n - 2] > c[n - 5];
+  add('Volumen', `${vr.toFixed(1)}x el promedio con el precio ${upm ? 'subiendo' : 'bajando'}${upm && vr < 0.7 ? ': sube sin respaldo' : ''}`, upm && vr >= 1 ? 1 : upm && vr < 0.7 ? -1 : !upm && vr >= 1.2 ? -1 : 0);
+  const fam = [['Estructura', rows[2].pts], ['Medias', rows[0].pts], ['ADX', rows[4].pts], ['MACD', rows[5].pts], ['Volumen', rows[6].pts]];
+  const conf = { bull: fam.filter(x => x[1] > 0).length, bear: fam.filter(x => x[1] < 0).length, items: fam.map(x => ({ n: x[0], d: Math.sign(x[1]) })) };
+  const tdir = adx < 20 ? 0 : conf.bull >= 3 && conf.bull > conf.bear ? 1 : conf.bear >= 3 && conf.bear > conf.bull ? -1 : 0;
+  const trend = adx < 20 ? 'LATERAL' : tdir === 1 ? 'ALCISTA' : tdir === -1 ? 'BAJISTA' : 'MIXTO';
+  // 8) trigonometría: ángulo de la pendiente (30 velas, en ATR por vela)
+  const m = 30, ys = c.slice(-m), xm = (m - 1) / 2, ym = sum(ys) / m; let num = 0, den = 0; ys.forEach((y, i) => { num += (i - xm) * (y - ym); den += (i - xm) ** 2; });
+  const ang = Math.atan(num / den / a) * 180 / Math.PI;
+  add('Ángulo de tendencia (arctan)', `${ang.toFixed(1)}° sobre las últimas 30 velas; ±10° marca tendencia`, ang >= 10 ? 1 : ang <= -10 ? -1 : 0);
+  add('RSI 14', r.toFixed(0) + (r <= 30 ? ' (sobreventa)' : r >= 70 ? ' (sobrecompra)' : ' (neutral)'), r <= 30 ? 1 : r >= 70 ? -1 : 0);
+  // 10) Fibonacci sobre la pierna de las últimas 100 velas
+  const sh = h.slice(-100), sl = l.slice(-100), H = max(sh), L = min(sl), up = sl.indexOf(L) < sh.indexOf(H), rng = Math.max(H - L, 1e-12);
+  const pr = up ? (H - price) / rng : (price - L) / rng, at = q => up ? H - q * rng : L + q * rng, ext = q => up ? L + q * rng : H - q * rng;
+  let base, zona;
+  if (pr < 0.5) [base, zona] = [1, 'cerca del extremo de la pierna (retroceso leve)'];
+  else if (pr <= 0.786) [base, zona] = [2, 'zona de retroceso profundo 0.5 a 0.786'];
+  else [base, zona] = [-1, 'superó 0.786: la pierna se debilita'];
+  add('Fibonacci', `Pierna ${up ? 'alcista' : 'bajista'} ${fm(L)} a ${fm(H)}; retroceso ${pr.toFixed(2)}: ${zona}`, up ? base : -base);
+  // 11) riesgo / beneficio
+  const tgt = res.length ? res[0][0] : price + 2 * a; let stop = sup.length ? sup[0][0] - 0.3 * a : price - 1.5 * a;
+  stop = Math.max(Math.min(stop, price - 0.8 * a), price - 3 * a);
+  const rr = (tgt - price) / (price - stop), stopS = Math.min(Math.max(res.length ? res[0][0] + 0.3 * a : price + 1.5 * a, price + 0.8 * a), price + 3 * a), tgtS = sup.length ? sup[0][0] : price - 2 * a;
+  add('Riesgo / beneficio', `Objetivo ${fm(tgt)}, stop ${fm(stop)}, R/R ${rr.toFixed(2)}`, rr >= 2 ? 1 : rr < 1 ? -1 : 0);
+  // 12) red neuronal: solo suma al puntaje si demostró ventaja fuera de muestra
+  const nn = o.nnFn ? o.nnFn({ c, v, E50, E200, rs, adx: ADX, pdi, mdi, hist }, n) : null;
+  if (nn && nn.qualified) add('Red neuronal', `Prob. de subida en ${nn.H} velas ${(nn.p * 100).toFixed(0)}% (validación ${(nn.acc * 100).toFixed(0)}% vs ${(nn.base * 100).toFixed(0)}% base)`, nn.p >= 0.58 ? 1 : nn.p <= 0.42 ? -1 : 0);
+  // próximo punto de inflexión
+  let nxt = null;
+  if (alt.length >= 4) {
+    const gaps = alt.slice(1).map((x, i) => x[0] - alt[i][0]).slice(-6), avg = sum(gaps) / gaps.length, lastQ = alt[alt.length - 1];
+    const left = Math.max(1, Math.round(lastQ[0] + avg - (n - 1))), kind = lastQ[2] === 'H' ? 'L' : 'H';
+    nxt = { type: kind, bars: left, time: t[n - 1] + left * STEP[tf], price: kind === 'L' ? (sup.length ? sup[0][0] : at(0.618)) : (res.length ? res[0][0] : ext(1.272)), avg: Math.round(avg * 10) / 10 };
+  }
+  // temporalidad superior (de arriba hacia abajo): no comprar contra ella
+  const htfA = o.htfA || null;
+  const htfBear = !!htfA && htfA.tdir === -1, score = rows.reduce((z, x) => z + x.pts, 0), sc = sg(score);
+  let dec, why;
+  if (conf.bear >= 3 && score <= -4) [dec, why] = ['VENDER', `Puntaje ${sc} y ${conf.bear} de 5 señales bajistas: sal de la posición o no compres.`];
+  else if (score >= 5 && conf.bull >= 3) {
+    if (rr < 1.5) [dec, why] = ['ESPERAR', `Puntaje ${sc} y ${conf.bull} señales alcistas, pero R/R ${rr.toFixed(1)} es menor a 1.5.`];
+    else if (adx < 20) [dec, why] = ['ESPERAR', `Puntaje ${sc}, pero el mercado está lateral (ADX ${adx.toFixed(0)} bajo 20).`];
+    else if (htfBear) [dec, why] = ['ESPERAR', `Puntaje ${sc}, pero va contra la temporalidad superior (${HTF[tf]}: ${htfA.trend}).`];
+    else [dec, why] = ['COMPRAR', `Puntaje ${sc}, ${conf.bull} de 5 señales alcistas, ADX ${adx.toFixed(0)} y R/R ${rr.toFixed(1)}.`];
+  } else [dec, why] = ['ESPERAR', `Puntaje ${sc} con ${conf.bull} señales alcistas y ${conf.bear} bajistas de 5: sin confluencia suficiente.`];
+  // mejor momento de venta
+  const r1 = res.length ? res[0][0] : tgt;
+  const checks = [{ t: 'El precio está en la zona de resistencia o sobre el objetivo', ok: price >= r1 - 0.3 * a }, { t: 'RSI alto (65 o más)', ok: r >= 65 },
+    { t: 'Momentum en contra (puntaje -1 o menos)', ok: score <= -1 }, { t: 'Giro a la baja cercano (máximo estimado en 3 velas o menos)', ok: !!(nxt && nxt.type === 'H' && nxt.bars <= 3) }];
+  const nok = checks.filter(x => x.ok).length;
+  const sell = { low: r1 - 0.3 * a, high: r1, checks, ok: nok, label: nok >= 3 ? 'Buen momento para vender' : nok === 2 ? 'Cerca del mejor momento' : 'Todavía no',
+    when: nxt && nxt.type === 'H' ? `Máximo estimado en unas ${nxt.bars} velas, cerca de ${fm(nxt.price)}.` : '' };
+  const fl = Math.min(at(0.5), at(0.618)), fh = Math.max(at(0.5), at(0.618)), s1 = sup.length ? sup[0][0] : null;
+  const bz = up ? [fl, fh] : s1 ? [s1, s1 + 0.5 * a] : [price - a, price];
+  const bchk = [{ t: 'El precio está dentro o cerca de la zona de compra', ok: price <= bz[1] + 0.3 * a && price >= bz[0] - 0.5 * a }, { t: 'Tendencia alcista con ADX de 20 o más', ok: tdir === 1 },
+    { t: 'Impulso girando al alza (MACD)', ok: rows[5].pts > 0 }, { t: 'El volumen acompaña', ok: rows[6].pts > 0 }, { t: 'La temporalidad superior no es bajista', ok: !htfBear }];
+  const bok = bchk.filter(x => x.ok).length;
+  const buy = { low: bz[0], high: bz[1], checks: bchk, ok: bok, label: bok >= 4 ? 'Buen momento para comprar' : bok === 3 ? 'Cerca del mejor momento' : 'Todavía no' };
+  const pv = (h[n - 2] + l[n - 2] + c[n - 2]) / 3;
+  return { symbol: sym, tf, price, decision: dec, reason: why, score, rr, entry: price, stop, target: tgt, stop_s: stopS, target_s: tgtS, trend, tdir, conf, adx, sell, buy, rsi: r, atr: a, angle: ang,
+    ctx: htfA ? `${HTF[tf]}: ${htfA.trend}` : null, nn, tl: tl ? { t1: tl.t1, p1: tl.p1, t2: tl.t2, p2: tl.p2 } : null, rows, res, sup, next: nxt,
+    fib: { up, high: H, low: L, levels: [0.236, 0.382, 0.5, 0.618, 0.786].map(q => ({ r: q, price: at(q) })), ext: [1.272, 1.618].map(q => ({ r: q, price: ext(q) })) },
+    pivot: { P: pv, R1: 2 * pv - l[n - 2], S1: 2 * pv - h[n - 2] },
+    candles: k.map(x => ({ time: x[0], open: x[1], high: x[2], low: x[3], close: x[4] })),
+    ema50: t.slice(49).map((tt, i) => ({ time: tt, value: E50[i + 49] })), ema200: t.slice(199).map((tt, i) => ({ time: tt, value: E200[i + 199] })) };
+}
+
+// ---------- probabilidad aprendida, backtest y retroalimentación ----------
+const METHODS = ['Medias EMA', 'Cruce EMA', 'Estructura', 'Línea de tendencia', 'ADX', 'MACD', 'Volumen', 'Ángulo', 'RSI', 'Fibonacci', 'Riesgo/beneficio'];
+function probFor(tf, a) {  // P(el objetivo llega antes que el stop) según la regresión logística aprendida por período
+  const M = MEM.prob[tf], be = 1 / (1 + a.rr); if (!M) return { p: null, n: 0, be, ev: null };
+  const x = a.rows.slice(0, 11).map(r => r.pts), p = 1 / (1 + Math.exp(-(M.b + sum(M.w.map((w, k) => w * x[k])))));
+  return { p, n: M.n, win: M.win, be, ev: p * a.rr - (1 - p), valAcc: M.valAcc, valBase: M.valBase, valN: M.valN, useful: M.useful };
+}
+function fitProb(tf) {
+  const S = MEM.samples.filter(q => q.tf === tf && (q.y === 0 || q.y === 1)).sort((a, b) => a.t - b.t);
+  if (S.length < 20) { delete MEM.prob[tf]; return; }
+  const fit = D => {
+    const n = D.length, w = Array(11).fill(0), wins = sum(D.map(q => q.y)); let b = Math.log((wins + 1) / (n - wins + 1));
+    for (let it = 0; it < 300; it++) {
+      const gw = Array(11).fill(0); let gb = 0;
+      for (const q of D) { const e = 1 / (1 + Math.exp(-(b + sum(w.map((u, k) => u * q.x[k]))))) - q.y; gb += e; for (let k = 0; k < 11; k++) gw[k] += e * q.x[k]; }
+      b -= 0.1 * gb / n; for (let k = 0; k < 11; k++) w[k] -= 0.1 * (gw[k] / n + 0.05 * w[k]);
+    }
+    return { w, b };
+  };
+  let valAcc = null, valBase = null, valN = 0;
+  if (S.length >= 60) {  // validación cronológica: entrena con lo antiguo, evalúa con lo reciente
+    const cut = Math.floor(S.length * 0.7), m = fit(S.slice(0, cut)), V = S.slice(cut); valN = V.length;
+    valAcc = V.filter(q => (1 / (1 + Math.exp(-(m.b + sum(m.w.map((u, k) => u * q.x[k]))))) >= 0.5 ? 1 : 0) === q.y).length / valN;
+    const u = sum(V.map(q => q.y)) / valN; valBase = Math.max(u, 1 - u);
+  }
+  MEM.prob[tf] = { ...fit(S), n: S.length, win: sum(S.map(q => q.y)) / S.length, valAcc, valBase, valN, useful: valN >= 30 && valAcc > valBase + 0.02, time: Date.now() }; markDirty();
+}
+function backtest(k, sym, tf) {  // recorre el historial vela a vela con solo datos pasados; el stop gana si ambos se tocan en la misma vela
+  const out = [], N = k.length; let busy = -1;
+  for (let i = 150; i < N - 1; i++) {
+    if (i <= busy) continue;
+    let a; try { a = core(k.slice(Math.max(0, i - 499), i + 1), sym, tf, {}); } catch (e) { continue; }
+    if (a.decision !== 'COMPRAR') continue;
+    let y = null, R = 0, j = i + 1;
+    for (; j <= Math.min(i + 60, N - 1); j++) { if (k[j][3] <= a.stop) { y = 0; R = -1; break; } if (k[j][2] >= a.target) { y = 1; R = a.rr; break; } }
+    if (y === null && i + 60 > N - 1) continue;  // operación aún sin resolver
+    busy = j; out.push({ tf, t: k[i][0], x: a.rows.slice(0, 11).map(r => r.pts), y, R: y === null ? (k[Math.min(i + 60, N - 1)][4] - a.price) / (a.price - a.stop) : R, k: `bt:${sym}|${tf}`, src: 'historial' });
+  }
+  return out;
+}
+async function learnStep(budget = 3) {  // aprende del historial de cada par moneda/período (24 h de vigencia), unos pocos por ciclo
+  for (const s of loadWL()) for (const tf of MON_TFS) {
+    if (budget <= 0) return;
+    const key = s + '|' + tf; if (MEM.bt[key] && Date.now() - MEM.bt[key] < 24 * 3600e3) continue;
+    let k; try { k = await X.klines(s, tf, 1000); } catch (e) { continue; }
+    MEM.samples = MEM.samples.filter(q => q.k !== 'bt:' + key).concat(backtest(k, s, tf)).slice(-5000);
+    MEM.bt[key] = Date.now(); fitProb(tf); budget--; await sleep(0);
+  }
+}
+async function closePos(sym) {  // al cerrar tu operación, el resultado real alimenta el modelo
+  const p = POS[sym]; delete POS[sym]; if (!p) return;
+  let px = p.entry; try { px = (await analyzeC(sym, p.tf)).price; } catch (e) { /* usa la entrada */ }
+  const pnl = ((p.side === 'short' ? p.entry / px : px / p.entry) - 1) * 100, now = Math.floor(Date.now() / 1000);
+  MEM.trades.unshift({ symbol: sym, side: p.side || 'long', tf: p.tf, entry: p.entry, exit: px, pnl, time: now }); MEM.trades.length = Math.min(MEM.trades.length, 200);
+  if (p.x) { MEM.samples.push({ tf: p.tf, t: now, x: p.x.map(u => u * (p.side === 'short' ? -1 : 1)), y: pnl > 0 ? 1 : 0, R: null, k: 'usr', src: 'usuario' }); fitProb(p.tf); }
+  markDirty();
+}
+function learnInfo() {
+  const S = MEM.samples.filter(q => q.y === 0 || q.y === 1), T = MEM.trades;
+  return { samples: S.length, bt: { done: Object.keys(MEM.bt).length, total: loadWL().length * MON_TFS.length },
+    byTf: Object.fromEntries(Object.entries(MEM.prob).map(([t, m]) => [t, { n: m.n, win: m.win, valAcc: m.valAcc, valBase: m.valBase, valN: m.valN, useful: m.useful }])),
+    methods: METHODS.map((name, k) => { const P = S.filter(q => q.x[k] > 0), N = S.filter(q => q.x[k] < 0); return { name, nPos: P.length, wPos: sum(P.map(q => q.y)), nNeg: N.length, wNeg: sum(N.map(q => q.y)) }; }),
+    trades: { n: T.length, wins: T.filter(q => q.pnl > 0).length, avg: T.length ? sum(T.map(q => q.pnl)) / T.length : 0 } };
+}
+
+// ---------- monitoreo en vivo y posiciones ----------
+const STATE = {}, SEEN = {}, EVENTS = [], TS = {};
+function trendMemory(s, tf, a) {  // recuerda cada cambio de tendencia confirmado (2 lecturas seguidas)
+  const key = s + '|' + tf, lab = a.trend, o = TS[key]; TS[key] = [lab, o && o[0] === lab ? o[1] + 1 : 1];
+  if (TS[key][1] < 2 || MEM.last[key] === lab) return;
+  const prev = MEM.last[key]; MEM.last[key] = lab;
+  if (prev) { MEM.trends.unshift({ time: Math.floor(Date.now() / 1000), symbol: s, tf, from: prev, to: lab, price: a.price }); MEM.trends.length = Math.min(MEM.trends.length, 100); }
+  markDirty();
+}
+async function resolveSignals() {  // mide en vivo qué pasó con cada señal de COMPRAR: objetivo, stop o expiró (60 velas)
+  for (const g of MEM.signals) {
+    if (g.done) continue;
+    let k; try { k = await X.klines(g.symbol, g.tf, 500); } catch (e) { continue; }
+    const after = k.filter(x => x[0] > g.time); let out = null;
+    for (const x of after) { if (x[3] <= g.stop) { out = 'fallo'; break; } if (x[2] >= g.target) { out = 'acierto'; break; } }
+    if (!out && after.length >= 60) out = 'expirada';
+    if (out) { if (g.x && out !== 'expirada') { MEM.samples.push({ tf: g.tf, t: g.time, x: g.x, y: out === 'acierto' ? 1 : 0, R: null, k: 'sig', src: 'vivo' }); fitProb(g.tf); } g.done = out; const st = MEM.stats[g.tf] || (MEM.stats[g.tf] = { acierto: 0, fallo: 0, expirada: 0 }); st[out]++; markDirty(); }
+  }
+}
+function notify(ev) {
+  const tok = process.env.TELEGRAM_TOKEN, chat = process.env.TELEGRAM_CHAT_ID;
+  if (!tok || !chat) return;
+  const txt = `Glubi: ${ev.symbol} ${ev.tf} -> ${ev.to}\n${ev.reason || ''}\nPrecio ${fm(ev.price)} | stop ${fm(ev.stop)} | objetivo ${fm(ev.target)}\nNo es consejo financiero.`;
+  fetch(`https://api.telegram.org/bot${tok}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ chat_id: chat, text: txt }), signal: AbortSignal.timeout(10000) }).catch(() => {});
+}
+function addEvent(s, tf, prev, d, a, reason, stop, target) {
+  const ev = { time: Math.floor(Date.now() / 1000), symbol: s, tf, from: prev ?? null, to: d, price: a.price, stop: stop ?? a.stop, target: target ?? a.target, rr: a.rr, score: a.score, reason };
+  EVENTS.unshift(ev); EVENTS.length = Math.min(EVENTS.length, 60);
+  if (['COMPRAR', 'VENDER', 'CERRAR'].includes(d)) notify(ev);
+}
+async function checkPositions() {
+  await Promise.all(Object.entries(POS).map(async ([s, p]) => {
+    let a; try { a = await analyzeC(s, p.tf); } catch (e) { return; }
+    const px = a.price; let hitStop, hitTgt, flip, word, flipMsg;
+    if (p.side === 'short') {
+      p.peak = Math.min(p.peak, px); p.stop = Math.min(p.stop, p.peak + 2.5 * a.atr);  // stop dinámico: solo baja
+      [hitStop, hitTgt, flip, word, flipMsg] = [px >= p.stop, px <= p.target, a.decision === 'COMPRAR', 'CERRAR', 'Las señales se volvieron alcistas.'];
+    } else {
+      p.peak = Math.max(p.peak, px); p.stop = Math.max(p.stop, p.peak - 2.5 * a.atr);  // stop dinámico: solo sube
+      [hitStop, hitTgt, flip, word, flipMsg] = [px <= p.stop, px >= p.target, a.decision === 'VENDER', 'VENDER', 'Las señales se volvieron bajistas.'];
+    }
+    const reason = hitStop ? 'Stop dinámico tocado: protege lo ganado o limita la pérdida.' : hitTgt ? 'Objetivo alcanzado: considera tomar ganancias.' : flip ? flipMsg : null;
+    if (reason && p.alerted !== reason) { p.alerted = reason; addEvent(s, p.tf, 'MANTENER', word, a, reason, p.stop, p.target); }
+  }));
+  writeJ(POS_FILE, POS);
+}
+async function monitorOnce() {
+  const jobs = []; for (const s of loadWL()) for (const tf of MON_TFS) jobs.push([s, tf]);
+  const res = await Promise.all(jobs.map(async ([s, tf]) => { try { return [s, tf, await analyzeC(s, tf)]; } catch (e) { return null; } }));
+  for (const r of res) {
+    if (!r) continue;
+    const [s, tf, a] = r, key = s + '|' + tf, d = a.decision, c = SEEN[key], cnt = c && c[0] === d ? c[1] + 1 : 1;
+    trendMemory(s, tf, a);
+    SEEN[key] = [d, cnt];
+    if (cnt < 2) continue;  // la decisión debe repetirse 2 veces (evita parpadeo de la vela en curso)
+    const prev = STATE[key];
+    if (d !== prev) {
+      STATE[key] = d;
+      if (d === 'COMPRAR') { MEM.signals.push({ symbol: s, tf, time: Math.floor(Date.now() / 1000), entry: a.price, stop: a.stop, target: a.target, x: a.rows.slice(0, 11).map(r => r.pts), done: null }); if (MEM.signals.length > 300) MEM.signals.shift(); markDirty(); }
+      if (d === 'COMPRAR' || d === 'VENDER' || prev === 'COMPRAR') addEvent(s, tf, prev, d, a, a.reason);
+    }
+  }
+  await checkPositions();
+  await resolveSignals();
+  await learnStep();
+}
+
+// ---------- investigación de mercado ----------
+const SCAN = { time: 0, tf: null, busy: false, done: 0, total: 0, rows: [] };
+async function runScan(tf) {
+  try {
+    const tick = await get(`${BASE}/ticker/24hr`, 120);
+    const top = tick.filter(x => x.symbol.endsWith('USDT') && SYM.test(x.symbol) && !STABLES.has(x.symbol.slice(0, -4)) && !/(UP|DOWN|BULL|BEAR)USDT$/.test(x.symbol))
+      .sort((a, b) => b.quoteVolume - a.quoteVolume).slice(0, 40);
+    SCAN.total = top.length;
+    for (let i = 0; i < top.length; i += 8) {
+      await Promise.all(top.slice(i, i + 8).map(async x => {
+        try {
+          const a = await analyzeC(x.symbol, tf, 300, false);
+          SCAN.rows.push({ symbol: x.symbol, price: a.price, chg: +x.priceChangePercent, score: a.score, rr: a.rr, decision: a.decision, trend: a.trend, stop: a.stop, target: a.target, p: a.prob.p });
+        } catch (e) { /* se omite */ }
+        SCAN.done++;
+      }));
+    }
+  } catch (e) { /* se omite */ } finally { SCAN.busy = false; SCAN.time = Date.now() / 1000; }
+}
+
+// ---------- servidor ----------
+const send = (res, code, body, type = 'application/json') => {
+  let b = Buffer.from(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body)); const hd = { 'Content-Type': type + '; charset=utf-8' };
+  if (b.length > 1024 && /\bgzip\b/.test(res.req?.headers['accept-encoding'] || '')) { b = zlib.gzipSync(b, { level: 3 }); hd['Content-Encoding'] = 'gzip'; }
+  res.writeHead(code, hd); res.end(b);
+};
+async function handle(req, res) {
+  const u = new URL(req.url, 'http://localhost'), q = Object.fromEntries(u.searchParams), post = req.method === 'POST', P = u.pathname;
+  const tf = Object.hasOwn(STEP, q.tf) ? q.tf : '1h';
+  let sym = (q.symbol || '').toUpperCase();
+  try {
+    if (P === '/') return send(res, 200, fs.readFileSync(path.join(__dirname, 'index.html')), 'text/html');
+    if (post && req.headers['x-glubi'] !== '1') return send(res, 403, { error: 'Solicitud no permitida' });
+    const wl = loadWL();
+    if (P === '/api/summary') {
+      const coins = await Promise.all(wl.map(async s => {
+        try { const a = await analyzeC(s, tf); return { symbol: a.symbol, price: a.price, decision: a.decision, score: a.score, rr: a.rr, p: a.prob.p, held: s in POS, pos: POS[s] || null }; }
+        catch (e) { return { symbol: s, error: e.message }; }
+      }));
+      return send(res, 200, { coins });
+    }
+    if (P === '/api/analysis') {
+      if (!SYM.test(sym)) return send(res, 400, { error: 'Símbolo inválido' });
+      const a = await analyzeC(sym, tf), p = POS[sym];
+      a.pos = p ? { ...p, pnl: ((p.side === 'short' ? p.entry / a.price : a.price / p.entry) - 1) * 100 } : null;
+      return send(res, 200, a);
+    }
+    if ((P === '/api/buy' || P === '/api/sell') && post) {
+      if (!SYM.test(sym)) return send(res, 400, { error: 'Símbolo inválido' });
+      if (P === '/api/buy') {
+        const a = await analyzeC(sym, tf), short = q.side === 'short';
+        POS[sym] = { side: short ? 'short' : 'long', entry: a.price, time: Math.floor(Date.now() / 1000), tf, peak: a.price, stop: short ? a.stop_s : a.stop, target: short ? a.target_s : a.target, alerted: null, x: a.rows.slice(0, 11).map(r => r.pts) };
+        if (!wl.includes(sym)) { wl.push(sym); writeJ(WL_FILE, wl); }  // la moneda con posición abierta siempre queda en la lista
+      } else await closePos(sym);
+      writeJ(POS_FILE, POS);
+      return send(res, 200, { ok: true });
+    }
+    if (P === '/api/scan') {
+      if (!SCAN.busy && (SCAN.tf !== tf || Date.now() / 1000 - SCAN.time > 300)) { Object.assign(SCAN, { busy: true, tf, done: 0, total: 0, rows: [] }); runScan(tf); }
+      return send(res, 200, SCAN);
+    }
+    if (P === '/api/mtf') {
+      if (!SYM.test(sym)) return send(res, 400, { error: 'Símbolo inválido' });
+      const rows = await Promise.all(Object.keys(STEP).map(async t => { try { const a = await analyzeC(sym, t, 500, false); return { tf: t, label: a.trend, dir: a.tdir, adx: a.adx, score: a.score, decision: a.decision }; } catch (e) { return { tf: t, label: 'sin datos', dir: 0, adx: 0, score: 0, decision: 'ESPERAR' }; } }));
+      return send(res, 200, { rows });
+    }
+    if (P === '/api/recalc' && post) {  // limpia cachés, vuelve a entrenar la red de la moneda actual y reinicia el escáner
+      cache.clear(); AC.clear(); SCAN.time = 0; SCAN.tf = null; if (SYM.test(sym)) for (const key of Object.keys(MEM.bt)) if (key.startsWith(sym + '|')) delete MEM.bt[key]; if (SYM.test(sym)) FORCE.add(sym + '|' + tf);
+      return send(res, 200, { ok: true });
+    }
+    if (P === '/api/memory') return send(res, 200, { models: Object.entries(MEM.models).map(([k, m]) => ({ key: k, acc: m.acc, base: m.base, valN: m.valN, qualified: m.qualified, time: m.time })), trends: MEM.trends.slice(0, 15), stats: MEM.stats, learn: learnInfo() });
+    if (P === '/api/learn' && post) { MEM.bt = {}; return send(res, 200, { ok: true }); }
+    if (P === '/api/events') return send(res, 200, { events: EVENTS });
+    if (P === '/api/search') {
+      const term = (q.q || '').toUpperCase().trim();
+      if (term.length < 2) return send(res, 200, { results: [] });
+      const names = (await get(`${BASE}/ticker/price`, 300)).map(x => x.symbol).filter(s => s.endsWith('USDT') && s.slice(0, -4).includes(term));
+      names.sort((a, b) => (a.startsWith(term) ? 0 : 1) - (b.startsWith(term) ? 0 : 1) || a.length - b.length);
+      return send(res, 200, { results: names.slice(0, 8) });
+    }
+    if (P === '/api/add' && post) {
+      if (!sym.endsWith('USDT')) sym += 'USDT';
+      if (!SYM.test(sym)) return send(res, 400, { error: 'Símbolo inválido' });
+      try { await get(`${BASE}/ticker/price?symbol=${sym}`, 5); } catch (e) { return send(res, 404, { error: `${sym} no existe en Binance` }); }
+      if (!wl.includes(sym)) { wl.push(sym); writeJ(WL_FILE, wl); }
+      return send(res, 200, { symbol: sym });
+    }
+    if (P === '/api/remove' && post) {
+      if (sym in POS) return send(res, 400, { error: 'Cierra la posición abierta antes de quitar la moneda' });
+      writeJ(WL_FILE, wl.filter(s => s !== sym));
+      return send(res, 200, { ok: true });
+    }
+    return send(res, 404, { error: 'No encontrado' });
+  } catch (e) { return send(res, 500, { error: e.message }); }
+}
+
+module.exports = { backtest, learnStep, fitProb, closePos, learnInfo, core, handle, MEM, analyzeC, resolveSignals, X, analyze, monitorOnce, runScan, SCAN, POS, EVENTS, checkPositions };
+if (require.main === module) {
+  setInterval(saveMem, 15000); process.on('SIGINT', () => { saveMem(); process.exit(0); });
+  (async () => { for (;;) { try { await monitorOnce(); } catch (e) { /* sigue */ } await sleep(20000); } })();
+  const srv = http.createServer(handle);
+  srv.on('error', e => {
+    if (e.code === 'EADDRINUSE') console.log(`El puerto ${PORT} ya está en uso (probablemente Glubi en Python u otra ventana de Node).\nCierra esa ventana o usa otro puerto:  set PORT=8766 && node glubi_server.js`);
+    else console.log(e.message);
+    process.exit(1);
+  });
+  srv.listen(PORT, '127.0.0.1', () => console.log(`Glubi web (Node): http://localhost:${PORT}   (Ctrl+C para salir)`));
+}

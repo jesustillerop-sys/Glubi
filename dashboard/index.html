@@ -1,61 +1,93 @@
-<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<!doctype html><html lang="es" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Glubi</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <link rel="stylesheet" href="/dashboard/styles.css"></head><body>
 <div class="app-shell">
-<aside class="sidebar">
- <div class="brand"><span class="brand-mark">G</span><span class="brand-text">GLU<span>BI</span></span></div>
- <div class="nav-label">Workspace</div>
+<aside class="sidebar" id="sidebar">
+ <div class="brand"><span class="brand-mark">G</span><span class="brand-text">GLU<span>BI</span></span><button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-expanded="false" aria-label="Fijar menú abierto" title="Fijar menú abierto">☰</button></div>
+ <div class="nav-label">Espacio de trabajo</div>
  <nav aria-label="Navegación principal">
-  <a class="nav-link active" href="#overview"><span class="nav-ico">⌂</span><span>Resumen</span></a>
-  <a class="nav-link" href="#markets"><span class="nav-ico">◷</span><span>Mercados</span></a>
-  <a class="nav-link" href="#paperbox"><span class="nav-ico">▣</span><span>Paper trading</span></a>
-  <a class="nav-link" href="#capbox"><span class="nav-ico">◉</span><span>Riesgo y capital</span></a>
-  <a class="nav-link" href="#events"><span class="nav-ico">◌</span><span>Alertas</span></a>
-  <a class="nav-link" href="#mem"><span class="nav-ico">✳</span><span>Performance Lab</span></a>
-  <a class="nav-link" href="#scanner"><span class="nav-ico">⌕</span><span>Escáner</span></a>
+  <a class="nav-link active" href="#overview" aria-label="Resumen" title="Resumen"><span class="nav-ico">⌂</span><span>Resumen</span></a>
+  <a class="nav-link" href="#markets" aria-label="Mercados" title="Mercados"><span class="nav-ico">◷</span><span>Mercados</span></a>
+  <a class="nav-link" href="#activity-section" aria-label="Actividad" title="Actividad"><span class="nav-ico">▤</span><span>Actividad</span></a>
+  <a class="nav-link" href="#capital-setup" aria-label="Capital simulado" title="Capital simulado"><span class="nav-ico">＋</span><span>Capital simulado</span></a>
+  <a class="nav-link nav-secondary" href="#paperbox"><span class="nav-ico">▣</span><span>Paper trading</span></a>
+  <a class="nav-link nav-secondary" href="#capbox"><span class="nav-ico">◉</span><span>Riesgo y capital</span></a>
+  <a class="nav-link nav-secondary" href="#events"><span class="nav-ico">◌</span><span>Alertas</span></a>
+  <a class="nav-link nav-secondary" href="#mem"><span class="nav-ico">✳</span><span>Laboratorio de rendimiento</span></a>
+  <a class="nav-link nav-secondary" href="#scanner"><span class="nav-ico">⌕</span><span>Escáner</span></a>
  </nav>
  <div class="sidebar-bottom"><div class="sidebar-note">Simulación y análisis. No se envían órdenes reales a Binance.</div><button class="btn" id="theme-toggle" aria-label="Cambiar tema" title="Cambiar tema">☼</button></div>
 </aside>
 <div class="main-shell">
-<header class="topbar"><div class="top-title">Adaptive Trading Intelligence</div><div class="tfs" id="tfs"></div>
-<span id="live" class="mut">conectando...</span><div class="top-actions"><button class="btn" id="recalc">Recalcular</button><button class="btn" id="bell">Activar alertas</button><button class="btn" id="theme-toggle-mobile" aria-label="Cambiar tema" title="Cambiar tema">☼</button></div>
-<div class="search"><input id="q" placeholder="Buscar activo (ej. BTC)" autocomplete="off" aria-label="Buscar activo"><div id="res"></div></div></header>
+<header class="topbar"><div class="top-title">Glubi</div><div class="tfs" id="tfs" aria-label="Período del gráfico"></div>
+<span id="live" class="mut">Conectando...</span><div class="top-actions"><button class="btn" id="recalc" aria-label="Actualizar análisis">Actualizar</button><button class="btn" id="bell" aria-label="Activar alertas">Alertas</button><button class="btn" id="theme-toggle-mobile" aria-label="Cambiar tema" title="Cambiar tema">☼</button></div>
+<div class="search"><input id="q" placeholder="Buscar activo" autocomplete="off" aria-label="Buscar activo"><div id="res"></div></div></header>
 <div id="msg" role="status" aria-live="polite"></div>
 <main>
 <section class="section" id="overview">
- <div class="section-head"><div><h2>Resumen de cartera</h2><p>Estado real del simulador virtual y rendimiento registrado.</p></div><span class="mut" id="overview-stamp">Paper trading activo</span></div>
+ <div class="portfolio-hero">
+  <div><div class="hero-label">Saldo virtual <span class="paper-badge">PAPER</span></div><strong id="hero-equity">—</strong><div class="hero-caption">Capital simulado · USDT</div></div>
+  <div class="hero-actions"><button class="btn" id="balance-toggle" aria-pressed="false">Ocultar</button><a class="primary-link" href="#capital-setup">Ajustar saldo <span aria-hidden="true">↗</span></a></div>
+ </div>
+ <div class="section-head"><div><h2>Resumen</h2><p>Rendimiento de tu cartera simulada.</p></div><span class="mut" id="overview-stamp">Simulación activa</span></div>
  <div class="metric-grid" id="dashboard-stats"></div>
+ <div class="asset-strip"><div class="asset-strip-head"><div><h3>Activos en seguimiento</h3><span class="mut">Precios y señales en tiempo real</span></div><a href="#markets">Ver mercados <span aria-hidden="true">→</span></a></div><div id="portfolio-assets" class="portfolio-assets"><span class="mut">Cargando activos...</span></div></div>
+ <div class="panel chart-panel"><div class="chart-caption"><div><h3 id="market-chart-title">Mercado</h3><small id="market-chart-caption">Velas · medias móviles · niveles</small></div><div class="chart-meta"><span class="mut" id="market-chart-price">USDT</span><span class="chart-readout" id="market-chart-readout" aria-live="polite">Pasa el cursor para ver detalles</span></div></div><div id="chart"></div></div>
  <div class="dashboard-grid">
   <div class="panel chart-panel"><div class="chart-caption"><div><h3>Evolución del capital virtual</h3><small id="equity-caption">Historial realizado, comisiones y posiciones abiertas</small></div><span class="mut" id="equity-range">USDT</span></div><div id="equity-chart"></div></div>
   <div class="dashboard-side">
-   <div class="panel"><h3>Resultados de operaciones</h3><div class="winloss" id="win-loss"></div></div>
-   <div class="panel"><h3>Estado del sistema</h3><div id="system-status" class="win-legend"></div></div>
+   <div class="panel"><h3>Resultados</h3><div class="winloss" id="win-loss"></div></div>
+   <div class="panel"><h3>Estado</h3><div id="system-status" class="win-legend"></div><div class="quick-actions"><a href="#capital-setup"><span aria-hidden="true">＋</span> Ajustar saldo</a><a href="#activity-section"><span aria-hidden="true">▤</span> Ver actividad</a><a href="#markets"><span aria-hidden="true">↗</span> Explorar mercados</a></div></div>
+   <div class="panel"><div class="asset-strip-head"><h3>Actividad reciente</h3><a href="#activity-section">Ver todo <span aria-hidden="true">→</span></a></div><div id="recent-transactions" class="recent-transactions"></div></div>
   </div>
  </div>
- <div class="panel activity-panel"><div class="chart-caption"><div><h3>Variación del capital</h3><small>Movimiento entre registros del historial paper</small></div><span class="mut">USDT</span></div><div id="activity-chart"></div></div>
+ <div class="panel activity-panel"><div class="chart-caption"><div><h3>Rendimiento</h3><small>Variación de capital simulado</small></div><span class="mut">USDT</span></div><div id="activity-chart"></div></div>
+</section>
+<section class="section" id="activity-section">
+ <div class="section-head"><div><h2>Actividad</h2><p>Operaciones abiertas y cerradas.</p></div><span class="paper-badge">PAPER</span></div>
+ <div class="history-metrics" id="history-metrics"></div>
+ <div class="panel history-panel"><div class="history-toolbar"><div><h3>Historial</h3><p class="mut">Resultados de operaciones simuladas.</p></div><div class="segmented-control" role="tablist" aria-label="Filtrar historial">
+  <button class="history-tab active" type="button" role="tab" aria-selected="true" data-history-view="activity">Actividad</button>
+  <button class="history-tab" type="button" role="tab" aria-selected="false" data-history-view="trades">Operaciones</button>
+ </div></div><div id="history-content" aria-live="polite"></div></div>
 </section>
 <section class="section" id="markets">
- <div class="section-head"><div><h2>Market Scanner</h2><p>Lista vigilada y análisis de la moneda seleccionada.</p></div><span class="mut">Spot · USDⓈ-M · Alpha experimental</span></div>
- <div class="panel market-coverage"><b>Otros mercados:</b> COIN-M, Opciones, bStocks y Margen aún no están habilitados. bStocks requiere verificar elegibilidad regional antes de mostrarlo como operable. <a href="#market-coverage-details">Ver cobertura</a></div>
+ <div class="section-head"><div><h2>Mercados</h2><p>Precios y señales de tus activos.</p></div><span class="mut">Spot · Futuros · Alpha</span></div>
+ <div class="panel market-coverage"><b>Disponible:</b> Spot, Futuros USDⓈ-M y Alpha. Otros mercados aún no están integrados. <a href="#market-coverage-details">Ver cobertura</a></div>
  <div id="cards"></div>
  <div class="section-columns"><div class="panel" id="verdict"></div><div class="panel" id="probbox"></div></div>
- <div class="panel chart-panel"><div class="chart-caption"><h3>Gráfico de mercado y niveles</h3><small>Velas · EMA 50/200 · soportes y resistencias</small></div><div id="chart"></div></div>
  <div class="section-columns"><div class="panel" id="posbox"></div><div class="panel" id="sellbox"></div></div>
  <div class="panel" id="mtf"></div>
  <div class="section-columns"><div class="panel"><h3>Cálculos detrás de la decisión</h3><table><thead><tr><th>Cálculo</th><th>Resultado</th><th>Puntos</th></tr></thead><tbody id="calc"></tbody></table></div><div class="panel" id="levels"></div></div>
 </section>
+<section class="section" id="capital-setup">
+ <div class="section-head"><div><h2>Saldo simulado</h2><p>Ajusta el capital inicial del simulador.</p></div><span class="paper-badge">VIRTUAL</span></div>
+ <div class="capital-layout">
+  <div class="panel capital-card"><div class="capital-label">Capital inicial</div><div class="capital-display"><span id="capital-amount">100</span><span class="currency-badge">USDT</span></div><p class="mut">Solo cambia el saldo virtual. No mueve dinero real.</p>
+   <div class="quick-amounts" aria-label="Importes rápidos"><button type="button" class="btn" data-capital-preset="100">100</button><button type="button" class="btn" data-capital-preset="500">500</button><button type="button" class="btn" data-capital-preset="1000">1.000</button><button type="button" class="btn" data-capital-preset="5000">5.000</button></div>
+   <div class="number-pad" role="group" aria-label="Teclado numérico">
+    <button type="button" class="keypad-key" data-key="1">1</button><button type="button" class="keypad-key" data-key="2">2</button><button type="button" class="keypad-key" data-key="3">3</button>
+    <button type="button" class="keypad-key" data-key="4">4</button><button type="button" class="keypad-key" data-key="5">5</button><button type="button" class="keypad-key" data-key="6">6</button>
+    <button type="button" class="keypad-key" data-key="7">7</button><button type="button" class="keypad-key" data-key="8">8</button><button type="button" class="keypad-key" data-key="9">9</button>
+    <button type="button" class="keypad-key" data-key=".">.</button><button type="button" class="keypad-key" data-key="0">0</button><button type="button" class="keypad-key keypad-delete" data-key="backspace" aria-label="Borrar último dígito">⌫</button>
+   </div>
+   <div class="swipe-confirm"><label for="capital-slider">Desliza para guardar</label><div class="swipe-track"><input id="capital-slider" type="range" min="0" max="100" value="0" aria-label="Desliza hasta el final para guardar el capital simulado"><span class="swipe-knob" aria-hidden="true">→</span><span class="swipe-copy" aria-hidden="true">Confirmar saldo virtual</span></div><div id="capital-feedback" class="mut" role="status" aria-live="polite"></div></div>
+   <p id="capital-locked" class="capital-locked" hidden>El capital inicial queda bloqueado cuando comienza el historial de operaciones. Puedes ajustar el riesgo y los costes en Paper Trading.</p>
+  </div>
+  <aside class="panel capital-note"><div class="capital-note-icon">✳</div><h3>Simulación, no dinero real</h3><p class="mut">Glubi no envía órdenes ni mueve fondos. El saldo se bloquea al iniciar operaciones.</p><div class="capital-note-row"><span>Moneda</span><b>USDT</b></div><div class="capital-note-row"><span>Órdenes reales</span><b class="up">Desactivadas</b></div></aside>
+ </div>
+</section>
 <section class="section" id="paper-section">
- <div class="section-head"><div><h2>Virtual Portfolio</h2><p>Operaciones paper separadas de cualquier cuenta o posición real.</p></div></div>
+ <div class="section-head"><div><h2>Paper trading</h2><p>Operaciones simuladas, separadas de cualquier cuenta o posición real.</p></div></div>
  <div class="panel" id="open" style="display:none"></div><div class="panel" id="paperbox"></div>
 </section>
 <section class="section" id="cap-section">
- <div class="section-head" id="risk"><div><h2>Risk Manager</h2><p>Capital y límites de riesgo actuales del registro heredado.</p></div></div>
+ <div class="section-head" id="risk"><div><h2>Gestión de riesgo</h2><p>Capital y límites de riesgo configurados.</p></div></div>
  <div class="panel" id="capbox"></div>
 </section>
-<section class="section" id="events-section"><div class="section-head"><div><h2>Telegram Intelligence</h2><p>Eventos y señales detectados por el motor local.</p></div></div><div class="panel" id="events"></div></section>
-<section class="section" id="mem-section"><div class="section-head"><div><h2>AI Learning Engine · Performance Lab</h2><p>Validación del modelo y estadísticas de aprendizaje disponibles.</p></div></div><div class="panel" id="mem"></div></section>
+<section class="section" id="events-section"><div class="section-head"><div><h2>Alertas</h2><p>Eventos y señales detectados por el motor local.</p></div></div><div class="panel" id="events"></div></section>
+<section class="section" id="mem-section"><div class="section-head"><div><h2>Aprendizaje y rendimiento</h2><p>Validación del modelo y estadísticas de aprendizaje disponibles.</p></div></div><div class="panel" id="mem"></div></section>
 <section class="section" id="scanner"><div class="section-head"><div><h2>Investigación de mercado</h2><p>Candidatos del escáner; no son recomendaciones.</p></div></div><div class="panel" id="sugg"></div><div class="panel" id="scan"></div></section>
 <section class="section" id="market-coverage-details"><div class="section-head"><div><h2>Cobertura de mercados</h2><p>La información de mercado no habilita ejecución ni confirma elegibilidad de cuenta.</p></div></div><div class="panel"><table><thead><tr><th>Mercado</th><th>Datos y análisis</th><th>Operaciones reales</th><th>Notas</th></tr></thead><tbody>
 <tr><td>Spot</td><td class="up">Disponible</td><td>No disponibles</td><td>Datos públicos de Binance.</td></tr>
@@ -68,6 +100,6 @@
 <tr><td>Margen</td><td class="mut">Pendiente</td><td>No disponibles</td><td>Falta el análisis independiente de riesgos.</td></tr>
 </tbody></table></div></section>
 </main>
-<div class="foot">Herramienta de análisis y simulación. No es consejo financiero. Resultados pasados y modelos no garantizan rentabilidad.</div>
+<div class="foot">Herramienta de análisis y simulación; no es consejo financiero. No se realizan depósitos ni operaciones reales. Los resultados pasados no garantizan rentabilidad.</div>
 </div></div>
 <script src="/dashboard/charts.js"></script><script src="/dashboard/dashboard.js"></script></body></html>
