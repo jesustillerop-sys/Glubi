@@ -1,0 +1,73 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Glubi</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<link rel="stylesheet" href="/dashboard/styles.css"></head><body>
+<div class="app-shell">
+<aside class="sidebar">
+ <div class="brand"><span class="brand-mark">G</span><span class="brand-text">GLU<span>BI</span></span></div>
+ <div class="nav-label">Workspace</div>
+ <nav aria-label="Navegación principal">
+  <a class="nav-link active" href="#overview"><span class="nav-ico">⌂</span><span>Resumen</span></a>
+  <a class="nav-link" href="#markets"><span class="nav-ico">◷</span><span>Mercados</span></a>
+  <a class="nav-link" href="#paperbox"><span class="nav-ico">▣</span><span>Paper trading</span></a>
+  <a class="nav-link" href="#capbox"><span class="nav-ico">◉</span><span>Riesgo y capital</span></a>
+  <a class="nav-link" href="#events"><span class="nav-ico">◌</span><span>Alertas</span></a>
+  <a class="nav-link" href="#mem"><span class="nav-ico">✳</span><span>Performance Lab</span></a>
+  <a class="nav-link" href="#scanner"><span class="nav-ico">⌕</span><span>Escáner</span></a>
+ </nav>
+ <div class="sidebar-bottom"><div class="sidebar-note">Simulación y análisis. No se envían órdenes reales a Binance.</div><button class="btn" id="theme-toggle" aria-label="Cambiar tema" title="Cambiar tema">☼</button></div>
+</aside>
+<div class="main-shell">
+<header class="topbar"><div class="top-title">Adaptive Trading Intelligence</div><div class="tfs" id="tfs"></div>
+<span id="live" class="mut">conectando...</span><div class="top-actions"><button class="btn" id="recalc">Recalcular</button><button class="btn" id="bell">Activar alertas</button><button class="btn" id="theme-toggle-mobile" aria-label="Cambiar tema" title="Cambiar tema">☼</button></div>
+<div class="search"><input id="q" placeholder="Buscar activo (ej. BTC)" autocomplete="off" aria-label="Buscar activo"><div id="res"></div></div></header>
+<div id="msg" role="status" aria-live="polite"></div>
+<main>
+<section class="section" id="overview">
+ <div class="section-head"><div><h2>Resumen de cartera</h2><p>Estado real del simulador virtual y rendimiento registrado.</p></div><span class="mut" id="overview-stamp">Paper trading activo</span></div>
+ <div class="metric-grid" id="dashboard-stats"></div>
+ <div class="dashboard-grid">
+  <div class="panel chart-panel"><div class="chart-caption"><div><h3>Evolución del capital virtual</h3><small id="equity-caption">Historial realizado, comisiones y posiciones abiertas</small></div><span class="mut" id="equity-range">USDT</span></div><div id="equity-chart"></div></div>
+  <div class="dashboard-side">
+   <div class="panel"><h3>Resultados de operaciones</h3><div class="winloss" id="win-loss"></div></div>
+   <div class="panel"><h3>Estado del sistema</h3><div id="system-status" class="win-legend"></div></div>
+  </div>
+ </div>
+ <div class="panel activity-panel"><div class="chart-caption"><div><h3>Variación del capital</h3><small>Movimiento entre registros del historial paper</small></div><span class="mut">USDT</span></div><div id="activity-chart"></div></div>
+</section>
+<section class="section" id="markets">
+ <div class="section-head"><div><h2>Market Scanner</h2><p>Lista vigilada y análisis de la moneda seleccionada.</p></div><span class="mut">Spot · USDⓈ-M · Alpha experimental</span></div>
+ <div class="panel market-coverage"><b>Otros mercados:</b> COIN-M, Opciones, bStocks y Margen aún no están habilitados. bStocks requiere verificar elegibilidad regional antes de mostrarlo como operable. <a href="#market-coverage-details">Ver cobertura</a></div>
+ <div id="cards"></div>
+ <div class="section-columns"><div class="panel" id="verdict"></div><div class="panel" id="probbox"></div></div>
+ <div class="panel chart-panel"><div class="chart-caption"><h3>Gráfico de mercado y niveles</h3><small>Velas · EMA 50/200 · soportes y resistencias</small></div><div id="chart"></div></div>
+ <div class="section-columns"><div class="panel" id="posbox"></div><div class="panel" id="sellbox"></div></div>
+ <div class="panel" id="mtf"></div>
+ <div class="section-columns"><div class="panel"><h3>Cálculos detrás de la decisión</h3><table><thead><tr><th>Cálculo</th><th>Resultado</th><th>Puntos</th></tr></thead><tbody id="calc"></tbody></table></div><div class="panel" id="levels"></div></div>
+</section>
+<section class="section" id="paper-section">
+ <div class="section-head"><div><h2>Virtual Portfolio</h2><p>Operaciones paper separadas de cualquier cuenta o posición real.</p></div></div>
+ <div class="panel" id="open" style="display:none"></div><div class="panel" id="paperbox"></div>
+</section>
+<section class="section" id="cap-section">
+ <div class="section-head" id="risk"><div><h2>Risk Manager</h2><p>Capital y límites de riesgo actuales del registro heredado.</p></div></div>
+ <div class="panel" id="capbox"></div>
+</section>
+<section class="section" id="events-section"><div class="section-head"><div><h2>Telegram Intelligence</h2><p>Eventos y señales detectados por el motor local.</p></div></div><div class="panel" id="events"></div></section>
+<section class="section" id="mem-section"><div class="section-head"><div><h2>AI Learning Engine · Performance Lab</h2><p>Validación del modelo y estadísticas de aprendizaje disponibles.</p></div></div><div class="panel" id="mem"></div></section>
+<section class="section" id="scanner"><div class="section-head"><div><h2>Investigación de mercado</h2><p>Candidatos del escáner; no son recomendaciones.</p></div></div><div class="panel" id="sugg"></div><div class="panel" id="scan"></div></section>
+<section class="section" id="market-coverage-details"><div class="section-head"><div><h2>Cobertura de mercados</h2><p>La información de mercado no habilita ejecución ni confirma elegibilidad de cuenta.</p></div></div><div class="panel"><table><thead><tr><th>Mercado</th><th>Datos y análisis</th><th>Operaciones reales</th><th>Notas</th></tr></thead><tbody>
+<tr><td>Spot</td><td class="up">Disponible</td><td>No disponibles</td><td>Datos públicos de Binance.</td></tr>
+<tr><td>Futuros USDⓈ-M</td><td class="up">Disponible</td><td>No disponibles</td><td>Perpetuos USDT; cortos solo en paper.</td></tr>
+<tr><td>Binance Alpha</td><td>Experimental</td><td>No disponibles</td><td>Usa endpoints no oficiales sujetos a cambios.</td></tr>
+<tr><td>Futuros COIN-M</td><td class="mut">Pendiente</td><td>No disponibles</td><td>Adaptador independiente aún no integrado.</td></tr>
+<tr><td>Opciones</td><td class="mut">Pendiente</td><td>No disponibles</td><td>Falta un módulo de datos y análisis específico.</td></tr>
+<tr><td>bStocks</td><td class="mut">Deshabilitado</td><td>No disponibles</td><td>La elegibilidad territorial debe verificarse primero.</td></tr>
+<tr><td>Nuevos listados</td><td class="mut">Pendiente</td><td>No disponibles</td><td>No se detectan listados nuevos de forma dedicada.</td></tr>
+<tr><td>Margen</td><td class="mut">Pendiente</td><td>No disponibles</td><td>Falta el análisis independiente de riesgos.</td></tr>
+</tbody></table></div></section>
+</main>
+<div class="foot">Herramienta de análisis y simulación. No es consejo financiero. Resultados pasados y modelos no garantizan rentabilidad.</div>
+</div></div>
+<script src="/dashboard/charts.js"></script><script src="/dashboard/dashboard.js"></script></body></html>

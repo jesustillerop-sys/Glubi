@@ -1,0 +1,14 @@
+/node_modules
+/test
+/bin
+/database/*.sqlite*
+/database/backups/
+/ai/models/
+/account.json
+/memory.json
+/positions.json
+/watchlist.json
+/paper_portfolio.json
+.env
+.env.*
+!.env.example

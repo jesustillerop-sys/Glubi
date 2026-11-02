@@ -1,0 +1,20 @@
+{
+  "name": "metacharddler",
+  "version": "4.1.2",
+  "description": "",
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "glubi_server.js",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env glubi_server.js",
+    "test": "node --test",
+    "check": "node --check glubi_server.js && node --check glubi_capital.js && node --check glubi_paper.js && node --check glubi_scheduler.js && node --check parchear.js && node --check core/server.js && node --check core/analysis.js && node --check core/indicators.js && node --check core/signals.js && node --check ai/trainer.js && node --check trading/adaptive_risk.js && node --check trading/paper_engine.js && node --check trading/risk_manager.js && node --check dashboard/dashboard.js && node --check dashboard/charts.js"
+  },
+  "dependencies": {
+    "@tensorflow/tfjs": "^4.22.0"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}
