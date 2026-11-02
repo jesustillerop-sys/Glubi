@@ -12,7 +12,7 @@ npm install
 npm start
 ```
 
-Open `http://localhost:8765`. By default the server binds to `127.0.0.1` and is reachable only from this PC.
+Open `http://localhost:8765`. By default the server binds to `127.0.0.1` locally and is reachable only from this PC. In production, it defaults to `0.0.0.0` so hosted services such as Render can reach it; set `HOST` explicitly to override either default.
 
 ### Open GLUBI on your phone over Wi-Fi
 

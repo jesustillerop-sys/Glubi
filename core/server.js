@@ -9,7 +9,7 @@ const ROOT = path.resolve(__dirname, '..');
 const DATA_DIR = path.resolve(process.env.GLUBI_DATA_DIR || ROOT);
 const createDatabaseStore = require('../database/store.js');
 const database = createDatabaseStore({ dir: DATA_DIR });
-const PORT = +process.env.PORT || 8765, HOST = process.env.HOST || '127.0.0.1', BASE = 'https://data-api.binance.vision/api/v3';
+const PORT = +process.env.PORT || 8765, HOST = process.env.HOST || (process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1'), BASE = 'https://data-api.binance.vision/api/v3';
 const APP_PASSWORD = process.env.APP_PASSWORD || '';
 const WL_FILE = path.join(DATA_DIR, 'watchlist.json'), POS_FILE = path.join(DATA_DIR, 'positions.json');
 const DEFAULT = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'], STEP = { '5m': 300, '15m': 900, '30m': 1800, '1h': 3600, '4h': 14400, '1d': 86400 };
